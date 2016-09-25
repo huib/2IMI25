@@ -1,7 +1,6 @@
 using CP;
 
 // Define tuples for data import
-
 tuple Character {
 	key string name;
 	string type;
@@ -70,6 +69,7 @@ subject to {
     NrOfActorsNeeded == max(c in Characters, s in Scenes) actorPlaysInScene[c][s];
 }
 
+// Build the desired output
 int nrOfActorsOfType[ct in CharacterTypes];
 {Character} CharactersPlayedByActor[i in 0..NrOfActorsNeeded-1];
 
