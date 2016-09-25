@@ -1,0 +1,24 @@
+CharacterTypes = {"Male", "Female"};
+
+Characters = { 
+<"John","Male">,
+<"Alex","Male">,
+<"Father","Male">,
+<"Young Man","Male">,
+<"Stacy","Female">,
+<"Mother","Female">,
+<"Grandma","Female">,
+<"Woman #1","Female">,
+<"Lawyer","Female">
+};
+        
+LeadingCharacters = {"Stacy"};
+
+maxNrOfCharacters = 2;
+
+Scenes = {
+<"Act I Opening",{"Father","Mother","Grandma"}>,
+<"Theatre Lobby",{"Stacy", "John"}>,
+<"An Audition",{"Woman #1","Alex","John","Lawyer", "Stacy"}>,
+<"Stacy's Apartment",{"Stacy", "Young Man"}>
+};

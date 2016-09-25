@@ -1,0 +1,46 @@
+<?xml version="1.0" encoding="ASCII"?><project>
+	<version>1.0</version>
+	<configs>
+		<config category="opl" default="true" name="3Types">
+			<ref name="Assignment 1.mod" type="model">
+			</ref>
+			<ref name="Assignment 1.ops" type="setting">
+			</ref>
+			<ref name="3Types.dat" type="data">
+			</ref>
+		</config>
+		<config category="opl" default="false" name="3TypesTwice">
+			<ref name="Assignment 1.ops" type="setting">
+			</ref>
+			<ref name="Assignment 1.mod" type="model">
+			</ref>
+			<ref name="3TypesTwice.dat" type="data">
+			</ref>
+		</config>
+		<config category="opl" default="false" name="Actual">
+			<ref name="Assignment 1.ops" type="setting">
+			</ref>
+			<ref name="Assignment 1.mod" type="model">
+			</ref>
+			<ref name="Actual.dat" type="data">
+			</ref>
+		</config>
+		<config category="opl" default="false" name="ActualMax4">
+			<ref name="Assignment 1.ops" type="setting">
+			</ref>
+			<ref name="Assignment 1.mod" type="model">
+			</ref>
+			<ref name="ActualMax4.dat" type="data">
+			</ref>
+		</config>
+		<config category="opl" default="false" name="SmallPlay">
+			<ref name="Assignment 1.ops" type="setting">
+			</ref>
+			<ref name="Assignment 1.mod" type="model">
+			</ref>
+			<ref name="SmallPlay.dat" type="data">
+			</ref>
+		</config>
+	</configs>
+	
+</project>
