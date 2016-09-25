@@ -1,13 +1,10 @@
 using CP;
 
 // Define tuples for data import
-tuple CharacterType {
-	key string type;
-}
 
 tuple Character {
 	key string name;
-	CharacterType type;
+	string type;
 }
 
 tuple Scene {
@@ -16,10 +13,10 @@ tuple Scene {
 }
 
 // Import the data
-{CharacterType} CharacterTypes = ...;
+{string} CharacterTypes = ...;
 {Character} Characters = ...;
 
-{Character} LeadingCharacters = ...;
+{string} LeadingCharacters = ...;
 int maxNrOfCharacters = ...;
 {Scene} Scenes = ...;
 
@@ -28,6 +25,14 @@ execute {
 	cp.param.Workers = 1;
 	cp.param.TimeLimit = 5; 
 }
+
+// Keep the 
+dvar int actorPlaysInScene[c in Characters][s in Scenes];
+
+// As said, we are looking for an assignment of actors to characters that satisfies the 
+// above given constraints and that minimizes the number of required actors.
+dvar int NrOfActorsNeeded;
+minimize NrOfActorsNeeded;
 
 // Add the constraints
 subject to {
@@ -57,7 +62,12 @@ subject to {
 	// confuse the audience.
 	
 	// DONE
-	
+	// Maintain actorsNeeded
+	forall(c in Characters)
+	  forall(s in Scenes)
+	    actorPlaysInScene[c][s] >= 0;
+	    
+    NrOfActorsNeeded == max(c in Characters, s in Scenes) actorPlaysInScene[c][s];
 }
 
 int nrOfActorsOfType[ct in CharacterTypes];
@@ -74,4 +84,4 @@ execute {
   	for(var i=0; i<NrOfActorsNeeded; i++) {
   	  writeln("Actor ", i, " plays ", CharactersPlayedByActor[i]);
     }  	  
-}  
+}
