@@ -19,9 +19,15 @@ tuple Scene {
 int maxNrOfCharacters = ...;
 {Scene} Scenes = ...;
 
-int minSceneMemberCount = max(s in Scenes) card(s.names);
+// Calculate some extra values
+int maxSceneMemberCount = max(s in Scenes) card(s.names);
+{Character} sceneCharacters[s in Scenes] = {c | c in Characters : c.name in s.names};
+int CharactersCardinality = card(Characters);
 
-{Character} sceneCharacter[s in Scenes] = {c | c in Characters : c.name in s.names};
+// Calculate the minimal number of needed characters
+{Character} CharactersByType[type in CharacterTypes] = {c | c in Characters : c.type == type};
+float minActorsNeeded[type in CharacterTypes] = ceil(card({c | c in CharactersByType[type] : c.name not in LeadingCharacters}) div maxNrOfCharacters);
+float minNeeded = card(LeadingCharacters) + sum(type in CharacterTypes) minActorsNeeded[type];
 
 // Set the settings
 execute {
@@ -30,26 +36,20 @@ execute {
 }
 
 dvar int+ actorPlaysCharacter[c in Characters];
-dvar int+ characterPlayedByActor[c in Characters][i in 1..card(Characters)];
 
 // As said, we are looking for an assignment of actors to characters that satisfies the 
 // above given constraints and that minimizes the number of required actors.
-dvar int+ NrOfActorsNeeded;
+dexpr int NrOfActorsNeeded = max(c in Characters) actorPlaysCharacter[c];
 minimize NrOfActorsNeeded;
 
 // Add the constraints
 subject to {
-	// TODO
-	
 	// Another constraint is that to allow people to change costume, an actor cannot play
 	// one character in one scene and another in the scene that is directly next, i.e., 
 	// at least one scene needs to be in between any actor playing two different characters.
 	forall(s in Scenes : ord(Scenes, s) < card(Scenes) - 1)
-       allDifferent(all(c in sceneCharacter[s] union sceneCharacter[next(Scenes, s)]) actorPlaysCharacter[c]);
+       allDifferent(all(c in sceneCharacters[s] union sceneCharacters[next(Scenes, s)]) actorPlaysCharacter[c]);
 	
-	// Use ord, next and a union somehow
-	
-	// DONE
 	// Once an actor plays a certain character in a scene for example, he or she needs
 	// to play that character in the whole play.	
 	// Another constraint is that you cannot have two actors together play a character 
@@ -58,7 +58,7 @@ subject to {
 	    
 	// An actor obviously also cannot play more than one character in the same scene. 
 	forall(s in Scenes)
-	  allDifferent(all(c in sceneCharacter[s]) actorPlaysCharacter[c]);
+	  allDifferent(all(c in sceneCharacters[s]) actorPlaysCharacter[c]);
 	  
 	// There are furthermore a couple of leading characters and the actors assigned to 
 	// those characters cannot play any other character as that would again confuse the 
@@ -77,27 +77,20 @@ subject to {
 	    	
 	// A final constraint is that no actor can be assigned to more than a given maximal
 	// number of characters, this as assigning too many characters to an actor will again 
-	// confuse the audience.	
+	// confuse the audience.
 	forall(i in 1..card(Characters))
-	  sum(c in Characters) characterPlayedByActor[c][i] <= maxNrOfCharacters;
+	  count(actorPlaysCharacter, i) <= maxNrOfCharacters; 
 	
-		
 	// Global (given) constraints 
 	
 	// Maintain actorsNeeded
-    NrOfActorsNeeded == max(c in Characters) actorPlaysCharacter[c];
-    
     // We know the minimal number of actors is equal to the maximum number of users on stage;
-    NrOfActorsNeeded >= minSceneMemberCount;
-	  
-	// Extra constraints
-	    
-	// Keep track of all scenes an actor has played in, if he is non zero than 
-	// characterPlayedByActor becomes 1, otherwise 0; then we can sum over this array to 
-	// force the maximal number of characters, that constraint is listed above
-	forall(c in Characters)
-      characterPlayedByActor[c][actorPlaysCharacter[c]] == (actorPlaysCharacter[c] > 0);
-
+    NrOfActorsNeeded >= maxSceneMemberCount;
+    NrOfActorsNeeded <= CharactersCardinality;
+    NrOfActorsNeeded >= minNeeded;
+    
+    forall(c in Characters)
+      actorPlaysCharacter[c] <= CharactersCardinality;
 }
 
 // Build the desired output
