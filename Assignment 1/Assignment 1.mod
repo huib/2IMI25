@@ -7,7 +7,7 @@ tuple Character {
 }
 
 tuple Scene {
-  key string nameAct;
+  string nameAct;
   {string} names;
 }
 
@@ -18,6 +18,8 @@ tuple Scene {
 {string} LeadingCharacters = ...;
 int maxNrOfCharacters = ...;
 {Scene} Scenes = ...;
+
+int minSceneMemberCount = max(s in Scenes) card(s.names);
 
 // Set the settings
 execute {
@@ -48,12 +50,6 @@ subject to {
 	// at least one scene needs to be in between any actor playing two different characters.
 	
 	// DONE
-		
-	// Global (given) constraints 
-	
-	// Maintain actorsNeeded
-    NrOfActorsNeeded == max(c in Characters, s in Scenes) actorPlaysInScene[c][s];
-    
 	// Once an actor plays a certain character in a scene for example, he or she needs
 	// to play that character in the whole play.	
 	// Another constraint is that you cannot have two actors together play a character 
@@ -88,6 +84,15 @@ subject to {
 	// confuse the audience.	
 	forall(i in 1..card(Characters))
 	  sum(c in Characters) characterPlayedByActor[c][i] <= maxNrOfCharacters;
+	
+		
+	// Global (given) constraints 
+	
+	// Maintain actorsNeeded
+    NrOfActorsNeeded == max(c in Characters, s in Scenes) actorPlaysInScene[c][s];
+    
+    // We know the minimal number of actors is equal to the maximum number of users on stage;
+    NrOfActorsNeeded >= minSceneMemberCount;
 	  
 	// Extra constraints
 	
@@ -106,11 +111,8 @@ subject to {
 	// force the maximal number of characters, that constraint is listed above
 	forall(s in Scenes)
 	  forall(c in characterPlaysInScene[s])
-	    actorPlaysInScene[c][s] > 0 => characterPlayedByActor[c][actorPlaysInScene[c][s]] == 1;
-	   
-	forall(s in Scenes)
-	  forall(c in characterPlaysInScene[s])
-	    actorPlaysInScene[c][s] == 0 => characterPlayedByActor[c][actorPlaysInScene[c][s]] == 0;
+        characterPlayedByActor[c][actorPlaysInScene[c][s]] == (actorPlaysInScene[c][s] > 0);
+
 }
 
 // Build the desired output
