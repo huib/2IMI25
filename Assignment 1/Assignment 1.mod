@@ -26,7 +26,8 @@ int CharactersCardinality = card(Characters);
 
 // Calculate the minimal number of needed characters
 {Character} CharactersByType[type in CharacterTypes] = {c | c in Characters : c.type == type};
-float minActorsNeeded[type in CharacterTypes] = ceil(card({c | c in CharactersByType[type] : c.name not in LeadingCharacters}) div maxNrOfCharacters);
+float minActorsNeeded[type in CharacterTypes] = ceil(card({c | c in CharactersByType[type] : c.name not in LeadingCharacters}) / maxNrOfCharacters);
+
 float minNeeded = card(LeadingCharacters) + sum(type in CharacterTypes) minActorsNeeded[type];
 int maxNeeded = sum(type in CharacterTypes) card(CharactersByType[type]);
 
@@ -49,7 +50,7 @@ subject to {
     // one character in one scene and another in the scene that is directly next, i.e., 
     // at least one scene needs to be in between any actor playing two different characters.
     forall(s in Scenes : ord(Scenes, s) < card(Scenes) - 1)
-       allDifferent(all(c in sceneCharacters[s] union sceneCharacters[next(Scenes, s)]) actorPlaysCharacter[c]);
+      allDifferent(all(c in sceneCharacters[s] union sceneCharacters[next(Scenes, s)]) actorPlaysCharacter[c]);
     
     // Once an actor plays a certain character in a scene for example, he or she needs
     // to play that character in the whole play.    
@@ -66,10 +67,10 @@ subject to {
     // audience.
     forall(c in LeadingCharacters)
       forall(leading in Characters: c == leading.name)
-          forall(cc in Characters : c != cc.name)
+        forall(cc in Characters : c != cc.name)
           actorPlaysCharacter[cc] != actorPlaysCharacter[leading];
 
-      // There are also parts for males that can only be played by men, parts for females
+    // There are also parts for males that can only be played by men, parts for females
     // that can only be played by women, etc.
     // Mart: This means that two characters which have different types cannot be played
     //       by the same person
@@ -79,9 +80,9 @@ subject to {
     // A final constraint is that no actor can be assigned to more than a given maximal
     // number of characters, this as assigning too many characters to an actor will again 
     // confuse the audience.
-    forall(i in 1..card(Characters))
-      count(actorPlaysCharacter, i) <= maxNrOfCharacters; 
-    
+    forall(i in 0..card(Characters)-1)
+      count(actorPlaysCharacter, i) <= maxNrOfCharacters;
+          
     // Global (given) constraints 
     
     // Maintain actorsNeeded
@@ -95,6 +96,7 @@ subject to {
       actorPlaysCharacter[c] <= CharactersCardinality;
 }
 
+// Build a temporary array, which can be used to fill in the actual values
 string actorType[i in 0..NrOfActorsNeeded-1] = first({c | c in Characters : actorPlaysCharacter[c] == i}).type;
 
 // Build the desired output
