@@ -1,0 +1,54 @@
+<?xml version="1.0" encoding="ASCII"?><project>
+	<version>1.0</version>
+	<configs>
+		<config category="opl" default="true" name="foodPrecedence1">
+			<ref name="Assignment 2.mod" type="model">
+			</ref>
+			<ref name="Assignment 2.ops" type="setting">
+			</ref>
+			<ref name="foodPrecedence1.dat" type="data">
+			</ref>
+		</config>
+		<config category="opl" default="false" name="Instance0">
+			<ref name="Assignment 2.mod" type="model">
+			</ref>
+			<ref name="Assignment 2.ops" type="setting">
+			</ref>
+			<ref name="Instance0.dat" type="data">
+			</ref>
+		</config>
+		<config category="opl" default="false" name="Instance1">
+			<ref name="Assignment 2.mod" type="model">
+			</ref>
+			<ref name="Assignment 2.ops" type="setting">
+			</ref>
+			<ref name="Instance1.dat" type="data">
+			</ref>
+		</config>
+		<config category="opl" default="false" name="Instance2">
+			<ref name="Assignment 2.mod" type="model">
+			</ref>
+			<ref name="Assignment 2.ops" type="setting">
+			</ref>
+			<ref name="Instance2.dat" type="data">
+			</ref>
+		</config>
+		<config category="opl" default="false" name="Instance3">
+			<ref name="Assignment 2.mod" type="model">
+			</ref>
+			<ref name="Assignment 2.ops" type="setting">
+			</ref>
+			<ref name="Instance3.dat" type="data">
+			</ref>
+		</config>
+		<config category="opl" default="false" name="Instance4">
+			<ref name="Assignment 2.mod" type="model">
+			</ref>
+			<ref name="Assignment 2.ops" type="setting">
+			</ref>
+			<ref name="Instance4.dat" type="data">
+			</ref>
+		</config>
+	</configs>
+	
+</project>
