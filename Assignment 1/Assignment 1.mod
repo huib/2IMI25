@@ -56,7 +56,7 @@ subject to {
     // to play that character in the whole play.    
     // Another constraint is that you cannot have two actors together play a character 
     // as that will confuse the audience. 
-    // Mart: has implicitly been solved by the model structure
+    // This is enforced by the way the problem is modeled
         
     // An actor obviously also cannot play more than one character in the same scene. 
     forall(s in Scenes)
@@ -72,8 +72,10 @@ subject to {
 
     // There are also parts for males that can only be played by men, parts for females
     // that can only be played by women, etc.
-    // Mart: This means that two characters which have different types cannot be played
-    //       by the same person
+    // <=> An actor can only play character of a single type,
+    // <=> no two character of a different type can be played by the same actor,
+    // <=> for any two character of a different type, the actors that play them must be
+    // different as well. 
     forall(c in Characters, cc in Characters : c.type != cc.type)
       actorPlaysCharacter[c] != actorPlaysCharacter[cc];
             
