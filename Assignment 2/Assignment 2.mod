@@ -77,34 +77,45 @@ tuple CriterionWeight {
 	float weight;
 }
 
-{Product} products = ...;
-{Demand} demands = ...;
-{Resource} resources = ...;
-{SetupResource} setupResources = ...;
-{StorageTank} storageTanks = ...;
-{StepPrototype} stepPrototypes = ...;
-{Precedence} precedences = ...;
-{Alternative} alternatives = ...;
-{StorageProduction} storageProductions = ...;
-{SetupMatrix} setupMatrix = ...;
-{CriterionWeight} criterionWeights = ...;
+{Product} Products = ...;
+{Demand} Demands = ...;
+{Resource} Resources = ...;
+{SetupResource} SetupResources = ...;
+{StorageTank} StorageTanks = ...;
+{StepPrototype} Steps = ...;
+{Precedence} Precedences = ...;
+{Alternative} Alternatives = ...;
+{StorageProduction} StorageProductions = ...;
+{SetupMatrix} Setups = ...;
+{CriterionWeight} CriterionWeights = ...;
 
+// Magic settings
+execute {
+  cp.param.Workers = 1;
+  cp.param.TimeLimit = Opl.card(Demands); 
+}
 
+dvar int TotalNonDeliveryCost;
+dvar int TotalProcessingCost;
+dvar int TotalSetupCost;
+dvar int TotalTardinessCost;
 
-// TODO, decide on decision variables/expressions
+dexpr float WeightedNonDeliveryCost = 
+  TotalNonDeliveryCost * item(CriterionWeights, ord(CriterionWeights, <"NonDeliveryCost">)).weight;
 
+dexpr float WeightedProcessingCost =
+  TotalProcessingCost * item(CriterionWeights, ord(CriterionWeights, <"ProcessingCost">)).weight;
 
+dexpr float WeightedSetupCost = 
+  TotalSetupCost * item(CriterionWeights, ord(CriterionWeights, <"SetupCost">)).weight;
 
-// TODO, decide on minimize function
+dexpr float WeightedTardinessCost = 
+  TotalTardinessCost * item(CriterionWeights, ord(CriterionWeights, <"Tardiness">)).weight;
 
-
+minimize WeightedNonDeliveryCost + WeightedProcessingCost + WeightedSetupCost + WeightedTardinessCost;
 
 subject to {
-
-
-	// TODO, decide on constraints
-
-
+	
 }
 
 // ----- This should help with generation according description -----
