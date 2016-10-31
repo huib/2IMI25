@@ -1,3 +1,6 @@
+// 2IMI25 Constraint programming assignment 2
+// By Huib Donkers and Mart Pluijmaekers
+
 using CP;
 
 tuple Product {
@@ -110,7 +113,7 @@ dexpr float WeightedSetupCost =
   TotalSetupCost * item(CriterionWeights, ord(CriterionWeights, <"SetupCost">)).weight;
 
 dexpr float WeightedTardinessCost = 
-  TotalTardinessCost * item(CriterionWeights, ord(CriterionWeights, <"Tardiness">)).weight;
+  TotalTardinessCost * item(CriterionWeights, ord(CriterionWeights, <"TardinessCost">)).weight;
 
 minimize WeightedNonDeliveryCost + WeightedProcessingCost + WeightedSetupCost + WeightedTardinessCost;
 
