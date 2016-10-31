@@ -94,30 +94,64 @@ tuple CriterionWeight {
 
 // Magic settings
 execute {
-  cp.param.Workers = 1;
-  cp.param.TimeLimit = Opl.card(Demands); 
+	cp.param.Workers = 1;
+	cp.param.TimeLimit = Opl.card(Demands); 
 }
 
-dvar int TotalNonDeliveryCost;
+// Extra data tuples
+tuple StepDemand {
+	key string stepId;
+	int productId;
+	key string demandId;
+	key int due;
+};
+	
+// All steps needed for a demand, i.e. all split steps needed (possibly)
+sorted {StepDemand} stepDemand = 
+	{<sId, pId, dId, dT> | <sId, pId, sRId> in Steps, <dId, pId, q, dMi, dMa, nDVC, dT, tVC> in Demands};
+
+// All produced demands
+dvar interval demands[d in Demands]
+	optional;
+	
+
+
+// Global decision variables, which should yield the final results
+
+dexpr float TotalNonDeliveryCost = sum(d in Demands) d.quantity * d.nonDeliveryVariableCost * (1-presenceOf(demands[d]));
+
 dvar int TotalProcessingCost;
 dvar int TotalSetupCost;
 dvar int TotalTardinessCost;
 
 dexpr float WeightedNonDeliveryCost = 
-  TotalNonDeliveryCost * item(CriterionWeights, ord(CriterionWeights, <"NonDeliveryCost">)).weight;
+	TotalNonDeliveryCost * item(CriterionWeights, ord(CriterionWeights, <"NonDeliveryCost">)).weight;
 
 dexpr float WeightedProcessingCost =
-  TotalProcessingCost * item(CriterionWeights, ord(CriterionWeights, <"ProcessingCost">)).weight;
+	TotalProcessingCost * item(CriterionWeights, ord(CriterionWeights, <"ProcessingCost">)).weight;
 
 dexpr float WeightedSetupCost = 
-  TotalSetupCost * item(CriterionWeights, ord(CriterionWeights, <"SetupCost">)).weight;
+	TotalSetupCost * item(CriterionWeights, ord(CriterionWeights, <"SetupCost">)).weight;
 
-dexpr float WeightedTardinessCost = 
+dexpr float WeightedTardinessCost =
   TotalTardinessCost * item(CriterionWeights, ord(CriterionWeights, <"TardinessCost">)).weight;
 
 minimize WeightedNonDeliveryCost + WeightedProcessingCost + WeightedSetupCost + WeightedTardinessCost;
 
+
 subject to {
+	
+	
+	
+	
+	// At all times, we cannot deliver before it is needed or after it is not needed anymore
+    forall(d in Demands){
+        // Do not deliver before it is needed, since we cannot store finalized products
+        endOf(demands[d]) >= d.deliveryMin;
+        
+        // Do not deliver after it is needed
+        endOf(demands[d]) <= d.deliveryMax;	
+	}
 	
 }
 
