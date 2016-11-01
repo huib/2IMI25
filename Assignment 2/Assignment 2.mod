@@ -98,14 +98,6 @@ execute {
     cp.param.TimeLimit = Opl.card(Demands); 
 }
 
-// Extra data tuples
-tuple StepDemand {
-    key string stepId;
-    int productId;
-    key string demandId;
-    key int due;
-};
-
 /* Not needed? Maybe useful for later
 // All resources that may need a particular setup resource
 {Resource} dependingResources[sr in SetupResources] =
@@ -121,12 +113,40 @@ tuple StepDemand {
 */
 
 // All steps needed for a demand, i.e. all split steps needed (possibly)
-{StepDemand} stepDemand = 
-    {<stepId, productId, demandId, dueTime> |
-    	<stepId, productId, _1> in Steps,
-    	<demandId, productId, _2, _3, _4, _5, dueTime, _6> in Demands
-    	// (merge conflict here? use your changes, mine are just easthetic)
-    };
+
+tuple StepDemand {
+	key Demand demand;
+	key StepPrototype stepPrototype;
+}
+tuple StepDemandAlternative {
+	key Demand demand;
+	key StepPrototype stepPrototype;
+	key Alternative alt;
+}
+{StepDemandAlternative} stepDemandAlternatives =
+	{<demand, stepPrototype, alt> |
+		stepPrototype in Steps,
+		demand in Demands :
+			stepPrototype.productId == demand.productId,
+		alt in Alternatives :
+			alt.stepId == stepPrototype.stepId
+	};
+/*	zelfde maar dan onleesbaarder, maar mogelijk sneller?
+	{<
+		<dId, pId, _2, _3, _4, _5, dT, _6>,
+		<stepId, pId, _1>,
+		<stepId, _7, _8, _9, _10, _11, _12>
+	> |
+			<dId, pId, _2, _3, _4, _5, dT, _6> in Demands,
+			<stepId, pId, _1> in Steps,
+			<stepId, _7, _8, _9, _10, _11, _12> in Alternatives
+	};
+//*/
+
+{StepDemand} stepDemands =
+	{<demand, stepPrototype> |
+		<demand, stepPrototype, _1> in stepDemandAlternatives
+	};	
 
 tuple StepDemandSetup {
 	key string demandId;
@@ -151,15 +171,22 @@ tuple StepDemandSetup {
 dvar interval demandIntervals[d in Demands]
 	optional;
 
-// Combine demands with the steps
-dvar interval stepDemandIntervals[s in stepDemand]
+int processingTime[s in stepDemandAlternatives] =
+	ftoi(ceil(s.demand.quantity*s.alt.variableProcessingTime))
+	+s.alt.fixedProcessingTime;
+	
+
+dvar interval stepDemandAlternativeIntervals[s in stepDemandAlternatives]
+	optional
+	size processingTime[s];
+dvar interval stepDemandIntervals[s in stepDemands]
 	optional;
 
 // Tardiness cost per demand
 pwlfunction tardinessCost[d in Demands] =
 	piecewise{
-		0->d.tardinessVariableCost*d.quantity*d.dueTime;
-		1
+		0->d.dueTime;
+		d.tardinessVariableCost*d.quantity
 	}(d.dueTime,0);
 
 
@@ -168,7 +195,7 @@ pwlfunction tardinessCost[d in Demands] =
 //	all(ssa in setupStepAlternative:  ssa.setupResourceId == s.setupResourceId) setupUsageAlternative[ssa];
 
 dvar sequence schedules[d in Demands]
-	in stepDemandIntervals;
+	in stepDemandAlternativeIntervals;
 
 
 
@@ -199,26 +226,38 @@ minimize WeightedNonDeliveryCost + WeightedProcessingCost + WeightedSetupCost + 
 
 
 subject to {
+	// Match up stepDemandIntervals with stepDemandAlternativeIntervals
+	forall(sda in stepDemandAlternatives) {
+		startAtStart(
+			stepDemandIntervals[<sda.demand, sda.stepPrototype>],
+			stepDemandAlternativeIntervals[sda]
+		);
+		endAtEnd(
+			stepDemandIntervals[<sda.demand, sda.stepPrototype>],
+			stepDemandAlternativeIntervals[sda]
+		);	
+	}
+
 	// enforce precedence
 	forall(d in Demands, p in Precedences){
-		forall(sdi_pre, sdi_succ in stepDemand :
-			sdi_pre .stepId == p.predecessorId &&
-			sdi_succ.stepId == p.successorId
+		forall(sda_pre, sda_succ in stepDemandAlternatives :
+			sda_pre .stepPrototype.stepId == p.predecessorId &&
+			sda_succ.stepPrototype.stepId == p.successorId
 		)
 		  prev(
 		  	schedules[d],
-		  	stepDemandIntervals[sdi_pre],
-		  	stepDemandIntervals[sdi_succ]
+		  	stepDemandAlternativeIntervals[sda_pre],
+		  	stepDemandAlternativeIntervals[sda_succ]
 		  );
 	}
 
     // All demands that are scheduled, should span its steps
     forall(d in Demands)
-        span(demandIntervals[d], all(s in stepDemand: s.demandId == d.demandId) stepDemandIntervals[s]);
+        span(demandIntervals[d], all(s in stepDemands: s.demand.demandId == d.demandId) stepDemandIntervals[s]);
         
     // All demands that are scheduled, should have their steps present
     forall(d in Demands)
-        forall(s in stepDemand: s.demandId == d.demandId)
+        forall(s in stepDemands: s.demand.demandId == d.demandId)
             presenceOf(demandIntervals[d]) => presenceOf(stepDemandIntervals[s]);
 
 
