@@ -182,14 +182,6 @@ dvar interval stepDemandAlternativeIntervals[s in stepDemandAlternatives]
 dvar interval stepDemandIntervals[s in stepDemands]
 	optional;
 
-// Tardiness cost per demand
-pwlfunction tardinessCost[d in Demands] =
-	piecewise{
-		0->d.dueTime;
-		d.tardinessVariableCost*d.quantity
-	}(d.dueTime,0);
-
-
 // All setupresources have to be put in a sequence
 //dvar sequence setupResourceUsages[s in SetupResources] in
 //	all(ssa in setupStepAlternative:  ssa.setupResourceId == s.setupResourceId) setupUsageAlternative[ssa];
@@ -203,9 +195,22 @@ dvar sequence schedules[d in Demands]
 
 dexpr float TotalNonDeliveryCost = sum(d in Demands) d.quantity * d.nonDeliveryVariableCost * (1-presenceOf(demandIntervals[d]));
 
-dexpr int TotalProcessingCost = 0; //TODO obviously
-dexpr int TotalSetupCost = 0; //TODO obviously
+dexpr float TotalProcessingCost =
+	sum(sda in stepDemandAlternatives)
+	  presenceOf(stepDemandAlternativeIntervals[sda])
+	  * (
+	  	sda.alt.fixedProcessingCost
+	  	+
+	  	sda.alt.variableProcessingCost * sda.demand.quantity
+	  );
+dexpr float TotalSetupCost = 0; //TODO, obviously
 
+// Tardiness cost per demand
+pwlfunction tardinessCost[d in Demands] =
+	piecewise{
+		0->d.dueTime;
+		d.tardinessVariableCost*d.quantity
+	}(d.dueTime,0);
 dexpr float TotalTardinessCost =
 	sum(d in Demands)
 	  presenceOf(demandIntervals[d])*endEval(demandIntervals[d],tardinessCost[d],0);
@@ -237,6 +242,19 @@ subject to {
 			stepDemandAlternativeIntervals[sda]
 		);	
 	}
+	// For all stepDemand, exactly one stepDemandAlternative must be selected
+	forall(sd in stepDemands) {
+		presenceOf(stepDemandIntervals[sd])
+		==
+		sum(alt in Alternatives : alt.stepId == sd.stepPrototype.stepId)
+		  presenceOf(stepDemandAlternativeIntervals[
+		  	<sd.demand, sd.stepPrototype, alt>
+		  ]);
+	}
+	
+	// no steps can be executed at the same time:
+	forall(d in Demands)
+	  noOverlap(schedules[d]);
 
 	// enforce precedence
 	forall(d in Demands, p in Precedences){
