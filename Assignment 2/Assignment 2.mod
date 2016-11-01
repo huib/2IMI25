@@ -212,12 +212,15 @@ subject to {
 		  );
 	}
 
-	// All demands that are scheduled, should have their steps present, and the demand should span its steps
-	forall(d in Demands){
-		span(demandIntervals[d], all(s in stepDemand: s.demandId == d.demandId) stepDemandIntervals[s]);
-		forall(s in stepDemand: s.demandId == d.demandId)
-			presenceOf(demandIntervals[d]) => presenceOf(stepDemandIntervals[s]);
-	}
+    // All demands that are scheduled, should span its steps
+    forall(d in Demands)
+        span(demandIntervals[d], all(s in stepDemand: s.demandId == d.demandId) stepDemandIntervals[s]);
+        
+    // All demands that are scheduled, should have their steps present
+    forall(d in Demands)
+        forall(s in stepDemand: s.demandId == d.demandId)
+            presenceOf(demandIntervals[d]) => presenceOf(stepDemandIntervals[s]);
+
 
 
 	// At all times, we cannot deliver before it is needed or after it is not needed anymore
