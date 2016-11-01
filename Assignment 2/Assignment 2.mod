@@ -152,11 +152,12 @@ dvar sequence setupResourceUsages[s in SetupResources] in
 
 dexpr float TotalNonDeliveryCost = sum(d in Demands) d.quantity * d.nonDeliveryVariableCost * (1-presenceOf(demandIntervals[d]));
 
+dexpr int TotalProcessingCost = 0; //TODO obviously
+dexpr int TotalSetupCost = 0; //TODO obviously
 
-dvar int TotalProcessingCost;
-dvar int TotalSetupCost;
 dexpr float TotalTardinessCost =
-	sum(d in Demands) endEval(demandIntervals[d],tardinessCost[d],0);
+	sum(d in Demands)
+	  presenceOf(demandIntervals[d])*endEval(demandIntervals[d],tardinessCost[d],0);
 
 dexpr float WeightedNonDeliveryCost = 
     TotalNonDeliveryCost * item(CriterionWeights, ord(CriterionWeights, <"NonDeliveryCost">)).weight;
@@ -174,16 +175,19 @@ minimize WeightedNonDeliveryCost + WeightedProcessingCost + WeightedSetupCost + 
 
 
 subject to {
-    
-    
-    
-    // At all times, we cannot deliver before it is needed or after it is not needed anymore
-    forall(d in Demands){
-        // Do not deliver before it is needed, since we cannot store finalized products
-        endOf(demandIntervals[d]) >= d.deliveryMin;
-        
-        // Do not deliver after it is needed
-        endOf(demandIntervals[d]) <= d.deliveryMax;	
+	// At all times, we cannot deliver before it is needed or after it is not needed anymore
+	forall(d in Demands){    
+    	// Demand is not delivered, or it is delivered within delivery window
+    	
+        presenceOf(demandIntervals[d]) == 0
+        ||
+        (
+	        // Do not deliver before it is needed, since we cannot store finalized products
+	        endOf(demandIntervals[d]) >= d.deliveryMin
+	        &&
+	        // Do not deliver after it is needed
+	        endOf(demandIntervals[d]) <= d.deliveryMax
+        );
 	}
 }
 
