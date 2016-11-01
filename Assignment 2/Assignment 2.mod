@@ -105,10 +105,28 @@ tuple StepDemand {
     key string demandId;
     key int due;
 };
-    
+
+/* Not needed? Maybe useful for later
+// All resources that may need a particular setup resource
+{Resource} dependingResources[sr in SetupResources] =
+	{resource |
+		resource in Resources,
+		<resource.resourceId, _1, stepId, _2, _3, _4, _5> in Alternatives,
+		<stepId, _6, sr.setupResourceId> in Steps
+	};
+	
+
+{string} stepIds = {s.stepId | s in Steps};
+{string} demandIds = {d.demandId | d in Demands};
+*/
+
 // All steps needed for a demand, i.e. all split steps needed (possibly)
 {StepDemand} stepDemand = 
-    {<sId, pId, dId, dT> | <sId, pId, sRId> in Steps, <dId, pId, q, dMi, dMa, nDVC, dT, tVC> in Demands};
+    {<stepId, productId, demandId, dueTime> |
+    	<stepId, productId, _1> in Steps,
+    	<demandId, productId, _2, _3, _4, _5, dueTime, _6> in Demands
+    	// (merge conflict here? use your changes, mine are just easthetic)
+    };
 
 tuple StepDemandSetup {
 	key string demandId;
@@ -123,35 +141,37 @@ tuple StepDemandSetup {
     string setupResourceId;
 };
 
-{StepDemandSetup} stepDemandSetups = {<dId, pId, q, dMi, dMa, nDVC, dT, tVC, sId, sRId> | <sId, pId, sRId> in Steps, <dId, pId, q, dMi, dMa, nDVC, dT, tVC> in Demands : sRId != "NULL"};
-
+{StepDemandSetup} stepDemandSetups =
+	{<dId, pId, q, dMi, dMa, nDVC, dT, tVC, sId, sRId> |
+		<sId, pId, sRId> in Steps,
+		<dId, pId, q, dMi, dMa, nDVC, dT, tVC> in Demands : sRId != "NULL"
+	};
 
 // All produced demands
 dvar interval demandIntervals[d in Demands]
 	optional;
-	
+
 // Combine demands with the steps
 dvar interval stepDemandIntervals[s in stepDemand]
 	optional;
-	
-pwlfunction tardinessCost[d in Demands] = piecewise{
+
+// Tardiness cost per demand
+pwlfunction tardinessCost[d in Demands] =
+	piecewise{
 		0->d.tardinessVariableCost*d.quantity*d.dueTime;
 		1
 	}(d.dueTime,0);
 
-	
+
 // All setupresources have to be put in a sequence
 //dvar sequence setupResourceUsages[s in SetupResources] in
 //	all(ssa in setupStepAlternative:  ssa.setupResourceId == s.setupResourceId) setupUsageAlternative[ssa];
-	
-	
-	
-	
-	
-	
-	
-	
-	
+
+dvar sequence schedules[d in Demands]
+	in stepDemandIntervals;
+
+
+
 // Global decision variables, which should yield the final results
 
 dexpr float TotalNonDeliveryCost = sum(d in Demands) d.quantity * d.nonDeliveryVariableCost * (1-presenceOf(demandIntervals[d]));
@@ -179,6 +199,18 @@ minimize WeightedNonDeliveryCost + WeightedProcessingCost + WeightedSetupCost + 
 
 
 subject to {
+	// enforce precedence
+	forall(d in Demands, p in Precedences){
+		forall(sdi_pre, sdi_succ in stepDemand :
+			sdi_pre .stepId == p.predecessorId &&
+			sdi_succ.stepId == p.successorId
+		)
+		  prev(
+		  	schedules[d],
+		  	stepDemandIntervals[sdi_pre],
+		  	stepDemandIntervals[sdi_succ]
+		  );
+	}
 
 	// All demands that are scheduled, should have their steps present, and the demand should span its steps
 	forall(d in Demands){
