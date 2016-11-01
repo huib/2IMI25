@@ -4,80 +4,80 @@
 using CP;
 
 tuple Product {
-	key int productId;
-	string name;
+    key int productId;
+    string name;
 }
 
 tuple Demand {
-	key string demandId;
-	int productId;
-	int quantity;
-	int deliveryMin;
-	int deliveryMax;
-	float nonDeliveryVariableCost;
-	int dueTime;
-	float tardinessVariableCost;
+    key string demandId;
+    int productId;
+    int quantity;
+    int deliveryMin;
+    int deliveryMax;
+    float nonDeliveryVariableCost;
+    int dueTime;
+    float tardinessVariableCost;
 }
 
 tuple Resource {
-	key string resourceId;
-	int resourceNr;
-	string setup_matrixId;
-	int initial_productId;
+    key string resourceId;
+    int resourceNr;
+    string setup_matrixId;
+    int initial_productId;
 }
 
 tuple SetupResource {
-	key string setupResourceId;
+    key string setupResourceId;
 }
 
 tuple StorageTank {
-	key string storageTankId;
-	string name;
-	int quantityMax;
-	string setupMatrixId;
-	int initialProductId;
+    key string storageTankId;
+    string name;
+    int quantityMax;
+    string setupMatrixId;
+    int initialProductId;
 }
 
 tuple StepPrototype {
-	key string stepId;
-	int productId;
-	string setupResourceId;
+    key string stepId;
+    int productId;
+    string setupResourceId;
 }
 
 tuple Precedence {
-	string predecessorId;
-	string successorId;
-	int delayMin;
-	int delayMax;
+    string predecessorId;
+    string successorId;
+    int delayMin;
+    int delayMax;
 }
 
 tuple Alternative {
-	key string stepId;
-	key int alternativeNumber;
-	string resourceId;
-	int fixedProcessingTime;
-	float variableProcessingTime;
-	float fixedProcessingCost;
-	float variableProcessingCost;
+    key string stepId;
+    key int alternativeNumber;
+    string resourceId;
+    int fixedProcessingTime;
+    float variableProcessingTime;
+    float fixedProcessingCost;
+    float variableProcessingCost;
 }
 
 tuple StorageProduction {
-	key string prodStepId;
-	key string storageTankId;
-	string consStepId;
+    key string prodStepId;
+    key string storageTankId;
+    string consStepId;
 }
 
 tuple SetupMatrix {
-	key string setupMatrixId;
-	key int fromState;
-	key int toState;
-	int setupTime;
-	int setupCost;
+    key string setupMatrixId;
+    key int fromState;
+    key int toState;
+    int setupTime;
+    int setupCost;
 }
 
 tuple CriterionWeight {
-	key string criterionId;
-	float weight;
+    key string criterionId;
+    float weight;
 }
 
 {Product} Products = ...;
@@ -94,21 +94,37 @@ tuple CriterionWeight {
 
 // Magic settings
 execute {
-	cp.param.Workers = 1;
-	cp.param.TimeLimit = Opl.card(Demands); 
+    cp.param.Workers = 1;
+    cp.param.TimeLimit = Opl.card(Demands); 
 }
 
 // Extra data tuples
 tuple StepDemand {
-	key string stepId;
-	int productId;
-	key string demandId;
-	key int due;
+    key string stepId;
+    int productId;
+    key string demandId;
+    key int due;
 };
-	
+    
 // All steps needed for a demand, i.e. all split steps needed (possibly)
 sorted {StepDemand} stepDemand = 
-	{<sId, pId, dId, dT> | <sId, pId, sRId> in Steps, <dId, pId, q, dMi, dMa, nDVC, dT, tVC> in Demands};
+    {<sId, pId, dId, dT> | <sId, pId, sRId> in Steps, <dId, pId, q, dMi, dMa, nDVC, dT, tVC> in Demands};
+
+tuple StepDemandSetup {
+	key string demandId;
+    int productId;
+    int quantity;
+    int deliveryMin;
+    int deliveryMax;
+    float nonDeliveryVariableCost;
+    int dueTime;
+    float tardinessVariableCost;
+    key string stepId;
+    string setupResourceId;
+};
+
+{StepDemandSetup} stepDemandSetups = {<dId, pId, q, dMi, dMa, nDVC, dT, tVC, sId, sRId> | <sId, pId, sRId> in Steps, <dId, pId, q, dMi, dMa, nDVC, dT, tVC> in Demands : sRId != "NULL"};
+
 
 // All produced demands
 dvar interval demandIntervals[d in Demands]
@@ -118,9 +134,24 @@ pwlfunction tardinessCost[d in Demands] = piecewise{
 		0->d.tardinessVariableCost*d.quantity*d.dueTime;
 		1
 	}(d.dueTime,0);
+
+	
+// All setupresources have to be put in a sequence
+dvar sequence setupResourceUsages[s in SetupResources] in
+	all(ssa in setupStepAlternative:  ssa.setupResourceId == s.setupResourceId) setupUsageAlternative[ssa];
+	
+	
+	
+	
+	
+	
+	
+	
+	
 // Global decision variables, which should yield the final results
 
 dexpr float TotalNonDeliveryCost = sum(d in Demands) d.quantity * d.nonDeliveryVariableCost * (1-presenceOf(demandIntervals[d]));
+
 
 dvar int TotalProcessingCost;
 dvar int TotalSetupCost;
@@ -128,13 +159,13 @@ dexpr float TotalTardinessCost =
 	sum(d in Demands) endEval(demandIntervals[d],tardinessCost[d],0);
 
 dexpr float WeightedNonDeliveryCost = 
-	TotalNonDeliveryCost * item(CriterionWeights, ord(CriterionWeights, <"NonDeliveryCost">)).weight;
+    TotalNonDeliveryCost * item(CriterionWeights, ord(CriterionWeights, <"NonDeliveryCost">)).weight;
 
 dexpr float WeightedProcessingCost =
-	TotalProcessingCost * item(CriterionWeights, ord(CriterionWeights, <"ProcessingCost">)).weight;
+    TotalProcessingCost * item(CriterionWeights, ord(CriterionWeights, <"ProcessingCost">)).weight;
 
 dexpr float WeightedSetupCost = 
-	TotalSetupCost * item(CriterionWeights, ord(CriterionWeights, <"SetupCost">)).weight;
+    TotalSetupCost * item(CriterionWeights, ord(CriterionWeights, <"SetupCost">)).weight;
 
 dexpr float WeightedTardinessCost =
   TotalTardinessCost * item(CriterionWeights, ord(CriterionWeights, <"TardinessCost">)).weight;
@@ -143,11 +174,10 @@ minimize WeightedNonDeliveryCost + WeightedProcessingCost + WeightedSetupCost + 
 
 
 subject to {
-	
-	
-	
-	
-	// At all times, we cannot deliver before it is needed or after it is not needed anymore
+    
+    
+    
+    // At all times, we cannot deliver before it is needed or after it is not needed anymore
     forall(d in Demands){
         // Do not deliver before it is needed, since we cannot store finalized products
         endOf(demandIntervals[d]) >= d.deliveryMin;
@@ -155,7 +185,6 @@ subject to {
         // Do not deliver after it is needed
         endOf(demandIntervals[d]) <= d.deliveryMax;	
 	}
-	
 }
 
 // ----- This should help with generation according description -----
@@ -173,7 +202,7 @@ subject to {
 // Report on solutions
 tuple DemandAssignment {
   key string demandId; 
-  int startTime;    	
+  int startTime;        
   int endTime;
   float nonDeliveryCost;
   float tardinessCost;
@@ -184,8 +213,8 @@ tuple DemandAssignment {
 
 tuple StepAssignment {
   key string demandId; 
-  key string stepId;  	
-  int startTime;    	
+  key string stepId;      
+  int startTime;        
   int endTime;
   string resourceId;
   float procCost;
@@ -200,8 +229,8 @@ tuple StepAssignment {
 
 tuple StorageAssignment {
   key string demandId; 
-  key string prodStepId;  	
-  int startTime;    	
+  key string prodStepId;      
+  int startTime;        
   int endTime;
   int quantity;
   string storageTankId;
@@ -211,47 +240,47 @@ tuple StorageAssignment {
 {StorageAssignment} storageAssignments = {};
 
 execute {
-  	writeln("Total Non-Delivery Cost    : ", TotalNonDeliveryCost);
-  	writeln("Total Processing Cost      : ", TotalProcessingCost);
-  	writeln("Total Setup Cost           : ", TotalSetupCost);
-  	writeln("Total Tardiness Cost       : ", TotalTardinessCost);
-  	writeln();
-  	writeln("Weighted Non-Delivery Cost : ",WeightedNonDeliveryCost);
-  	writeln("Weighted Processing Cost   : ", WeightedProcessingCost);
-  	writeln("Weighted Setup Cost        : ", WeightedSetupCost);
-  	writeln("Weighted Tardiness Cost    : ", WeightedTardinessCost);
-  	writeln();
+      writeln("Total Non-Delivery Cost    : ", TotalNonDeliveryCost);
+      writeln("Total Processing Cost      : ", TotalProcessingCost);
+      writeln("Total Setup Cost           : ", TotalSetupCost);
+      writeln("Total Tardiness Cost       : ", TotalTardinessCost);
+      writeln();
+      writeln("Weighted Non-Delivery Cost : ",WeightedNonDeliveryCost);
+      writeln("Weighted Processing Cost   : ", WeightedProcessingCost);
+      writeln("Weighted Setup Cost        : ", WeightedSetupCost);
+      writeln("Weighted Tardiness Cost    : ", WeightedTardinessCost);
+      writeln();
      
-  	for(var d in demandAssignments) {
- 		writeln(d.demandId, ": [", 
- 		        d.startTime, ",", d.endTime, "] ");
- 		writeln("   non-delivery cost: ", d.nonDeliveryCost, 
- 		        ", tardiness cost: " , d.tardinessCost);
-  	} 
-  	writeln();
+      for(var d in demandAssignments) {
+         writeln(d.demandId, ": [", 
+                 d.startTime, ",", d.endTime, "] ");
+         writeln("   non-delivery cost: ", d.nonDeliveryCost, 
+                 ", tardiness cost: " , d.tardinessCost);
+      } 
+      writeln();
 
- 	for(var sa in stepAssignments) {
- 		writeln(sa.stepId, " of ", sa.demandId, 
- 		        ": [", sa.startTime, ",", sa.endTime, "] ", 
- 		        "on ", sa.resourceId);
- 		write("   processing cost: ", sa.procCost);
- 		if (sa.setupCost > 0)
- 		  write(", setup cost: ", sa.setupCost);
- 		writeln();
- 		if (sa.startTimeSetup < sa.endTimeSetup)
- 			writeln("   setup step: [", 
- 			        sa.startTimeSetup, ",", sa.endTimeSetup, "] ",
- 			        "on ", sa.setupResourceId);   
-  	}
-  	writeln();
+     for(var sa in stepAssignments) {
+         writeln(sa.stepId, " of ", sa.demandId, 
+                 ": [", sa.startTime, ",", sa.endTime, "] ", 
+                 "on ", sa.resourceId);
+         write("   processing cost: ", sa.procCost);
+         if (sa.setupCost > 0)
+           write(", setup cost: ", sa.setupCost);
+         writeln();
+         if (sa.startTimeSetup < sa.endTimeSetup)
+             writeln("   setup step: [", 
+                     sa.startTimeSetup, ",", sa.endTimeSetup, "] ",
+                     "on ", sa.setupResourceId);   
+      }
+      writeln();
   
-  	for(var sta in storageAssignments) {
- 		if (sta.startTime < sta.endTime) {
- 			writeln(sta.prodStepId, " of ", sta.demandId, 
- 				" produces quantity ", sta.quantity,
- 			    	" in storage tank ", sta.storageTankId,
- 		    	     " at time ", sta.startTime, 
-		" which is consumed at time ", sta.endTime);	
-		}
-  	}	   
+      for(var sta in storageAssignments) {
+         if (sta.startTime < sta.endTime) {
+             writeln(sta.prodStepId, " of ", sta.demandId, 
+                 " produces quantity ", sta.quantity,
+                     " in storage tank ", sta.storageTankId,
+                      " at time ", sta.startTime, 
+        " which is consumed at time ", sta.endTime);    
+        }
+      }
 }
