@@ -111,18 +111,21 @@ sorted {StepDemand} stepDemand =
 	{<sId, pId, dId, dT> | <sId, pId, sRId> in Steps, <dId, pId, q, dMi, dMa, nDVC, dT, tVC> in Demands};
 
 // All produced demands
-dvar interval demands[d in Demands]
+dvar interval demandIntervals[d in Demands]
 	optional;
 	
-
-
+pwlfunction tardinessCost[d in Demands] = piecewise{
+		0->d.tardinessVariableCost*d.quantity*d.dueTime;
+		1
+	}(d.dueTime,0);
 // Global decision variables, which should yield the final results
 
-dexpr float TotalNonDeliveryCost = sum(d in Demands) d.quantity * d.nonDeliveryVariableCost * (1-presenceOf(demands[d]));
+dexpr float TotalNonDeliveryCost = sum(d in Demands) d.quantity * d.nonDeliveryVariableCost * (1-presenceOf(demandIntervals[d]));
 
 dvar int TotalProcessingCost;
 dvar int TotalSetupCost;
-dvar int TotalTardinessCost;
+dexpr float TotalTardinessCost =
+	sum(d in Demands) endEval(demandIntervals[d],tardinessCost[d],0);
 
 dexpr float WeightedNonDeliveryCost = 
 	TotalNonDeliveryCost * item(CriterionWeights, ord(CriterionWeights, <"NonDeliveryCost">)).weight;
@@ -147,10 +150,10 @@ subject to {
 	// At all times, we cannot deliver before it is needed or after it is not needed anymore
     forall(d in Demands){
         // Do not deliver before it is needed, since we cannot store finalized products
-        endOf(demands[d]) >= d.deliveryMin;
+        endOf(demandIntervals[d]) >= d.deliveryMin;
         
         // Do not deliver after it is needed
-        endOf(demands[d]) <= d.deliveryMax;	
+        endOf(demandIntervals[d]) <= d.deliveryMax;	
 	}
 	
 }
