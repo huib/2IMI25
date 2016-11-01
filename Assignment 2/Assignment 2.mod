@@ -107,7 +107,7 @@ tuple StepDemand {
 };
     
 // All steps needed for a demand, i.e. all split steps needed (possibly)
-sorted {StepDemand} stepDemand = 
+{StepDemand} stepDemand = 
     {<sId, pId, dId, dT> | <sId, pId, sRId> in Steps, <dId, pId, q, dMi, dMa, nDVC, dT, tVC> in Demands};
 
 tuple StepDemandSetup {
@@ -130,6 +130,10 @@ tuple StepDemandSetup {
 dvar interval demandIntervals[d in Demands]
 	optional;
 	
+// Combine demands with the steps
+dvar interval stepDemandIntervals[s in stepDemand]
+	optional;
+	
 pwlfunction tardinessCost[d in Demands] = piecewise{
 		0->d.tardinessVariableCost*d.quantity*d.dueTime;
 		1
@@ -137,8 +141,8 @@ pwlfunction tardinessCost[d in Demands] = piecewise{
 
 	
 // All setupresources have to be put in a sequence
-dvar sequence setupResourceUsages[s in SetupResources] in
-	all(ssa in setupStepAlternative:  ssa.setupResourceId == s.setupResourceId) setupUsageAlternative[ssa];
+//dvar sequence setupResourceUsages[s in SetupResources] in
+//	all(ssa in setupStepAlternative:  ssa.setupResourceId == s.setupResourceId) setupUsageAlternative[ssa];
 	
 	
 	
@@ -175,6 +179,15 @@ minimize WeightedNonDeliveryCost + WeightedProcessingCost + WeightedSetupCost + 
 
 
 subject to {
+
+	// All demands that are scheduled, should have their steps present, and the demand should span its steps
+	forall(d in Demands){
+		span(demandIntervals[d], all(s in stepDemand: s.demandId == d.demandId) stepDemandIntervals[s]);
+		forall(s in stepDemand: s.demandId == d.demandId)
+			presenceOf(demandIntervals[d]) => presenceOf(stepDemandIntervals[s]);
+	}
+
+
 	// At all times, we cannot deliver before it is needed or after it is not needed anymore
 	forall(d in Demands){    
     	// Demand is not delivered, or it is delivered within delivery window
