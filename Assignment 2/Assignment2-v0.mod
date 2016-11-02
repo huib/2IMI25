@@ -98,149 +98,207 @@ execute {
     cp.param.TimeLimit = Opl.card(Demands); 
 }
 
-// The prototype of a step in the production process of a demand
-tuple ProductionStepPrototype {
+/* Not needed? Maybe useful for later
+// All resources that may need a particular setup resource
+{Resource} dependingResources[sr in SetupResources] =
+	{resource |
+		resource in Resources,
+		<resource.resourceId, _1, stepId, _2, _3, _4, _5> in Alternatives,
+		<stepId, _6, sr.setupResourceId> in Steps
+	};
+	
+
+{string} stepIds = {s.stepId | s in Steps};
+{string} demandIds = {d.demandId | d in Demands};
+*/
+
+// All steps needed for a demand, i.e. all split steps needed (possibly)
+
+tuple StepDemand {
 	key Demand demand;
 	key StepPrototype stepPrototype;
 }
-
-// A concrete step in the production process of a demand
-tuple ProductionStep {
+tuple StepDemandAlternative {
 	key Demand demand;
 	key StepPrototype stepPrototype;
 	key Alternative alt;
 }
-
-// The prototypes of all ProductionSteps
-{ProductionStepPrototype} productionStepPrototypes =
-	{<demand, stepProt>|
-		demand in Demands,
-		stepProt in Steps : stepProt.productId == demand.productId
+{StepDemandAlternative} stepDemandAlternatives_byDemand[demand in Demands] =
+	{<demand, stepPrototype, alt> |
+		stepPrototype in Steps,
+		demand in Demands :
+			stepPrototype.productId == demand.productId,
+		alt in Alternatives :
+			alt.stepId == stepPrototype.stepId
 	};
-	
-// All possible ProductionSteps
-{ProductionStep} productionSteps =
-	{<demand, stepProt, alt>|
-		demand in Demands,
-		stepProt in Steps : stepProt.productId == demand.productId,
-		alt in Alternatives : alt.stepId == stepProt.stepId
+{StepDemandAlternative} stepDemandAlternatives =
+	{<demand, stepPrototype, alt> |
+		stepPrototype in Steps,
+		demand in Demands :
+			stepPrototype.productId == demand.productId,
+		alt in Alternatives :
+			alt.stepId == stepPrototype.stepId
 	};
-int productionTime[p in productionSteps] = ftoi(ceil(
-		p.demand.quantity*p.alt.variableProcessingTime
-		+ p.alt.fixedProcessingTime
-	));
+/*	zelfde maar dan onleesbaarder, maar mogelijk sneller?
+	{<
+		<dId, pId, _2, _3, _4, _5, dT, _6>,
+		<stepId, pId, _1>,
+		<stepId, _7, _8, _9, _10, _11, _12>
+	> |
+			<dId, pId, _2, _3, _4, _5, dT, _6> in Demands,
+			<stepId, pId, _1> in Steps,
+			<stepId, _7, _8, _9, _10, _11, _12> in Alternatives
+	};
+//*/
 
-// All production steps by resource used
-{ProductionStep} productionStepsOnResource[r in Resources] =
-	{pstep| pstep in productionSteps : pstep.alt.resourceId == r.resourceId};
+{StepDemand} stepDemands =
+	{<demand, stepPrototype> |
+		<demand, stepPrototype, _1> in stepDemandAlternatives
+	};	
 
-dvar interval productionStepInterval[p in productionSteps]
-	optional
-	size productionTime[p]
-	;
+tuple StepDemandSetup {
+	key string demandId;
+    int productId;
+    int quantity;
+    int deliveryMin;
+    int deliveryMax;
+    float nonDeliveryVariableCost;
+    int dueTime;
+    float tardinessVariableCost;
+    key string stepId;
+    string setupResourceId;
+};
 
-dvar interval productionInterval[d in Demands]
+{StepDemandSetup} stepDemandSetups =
+	{<dId, pId, q, dMi, dMa, nDVC, dT, tVC, sId, sRId> |
+		<sId, pId, sRId> in Steps,
+		<dId, pId, q, dMi, dMa, nDVC, dT, tVC> in Demands : sRId != "NULL"
+	};
+
+// All produced demands
+dvar interval demandIntervals[d in Demands]
 	optional;
 
-dvar sequence productionStepIntervalsOnResource[r in Resources]
-	in all(p in productionStepsOnResource[r]) productionStepInterval[p];
+int processingTime[s in stepDemandAlternatives] =
+	ftoi(ceil(s.demand.quantity*s.alt.variableProcessingTime))
+	+s.alt.fixedProcessingTime;
+	
 
-// ----------------
-// COST CALCULATION
+dvar interval stepDemandAlternativeIntervals[s in stepDemandAlternatives]
+	optional
+	;//size processingTime[s];
+dvar interval stepDemandIntervals[s in stepDemands]
+	optional;
 
-// Non delivery cost
-dexpr float TotalNonDeliveryCost =
-	sum(d in Demands)
-	  (1-presenceOf(productionInterval[d]))*
-	  d.quantity*d.nonDeliveryVariableCost;
-dexpr float WeightedNonDeliveryCost = 
-    TotalNonDeliveryCost * item(CriterionWeights, ord(CriterionWeights, <"NonDeliveryCost">)).weight;
+// All setupresources have to be put in a sequence
+//dvar sequence setupResourceUsages[s in SetupResources] in
+//	all(ssa in setupStepAlternative:  ssa.setupResourceId == s.setupResourceId) setupUsageAlternative[ssa];
 
-// processing cost
-dexpr float TotalProcessingCost =
-	sum(pstep in productionSteps)
-	  presenceOf(productionStepInterval[pstep])
-	  *
-	  (
-	  	pstep.alt.variableProcessingCost * pstep.demand.quantity
+// Global decision variables, which should yield the final results
+
+dexpr float TotalNonDeliveryCost = sum(d in Demands) d.quantity * d.nonDeliveryVariableCost * (1-presenceOf(demandIntervals[d]));
+
+dexpr float TotalProcessingCost = 
+	sum(sda in stepDemandAlternatives)
+	  presenceOf(stepDemandAlternativeIntervals[sda])
+	  * (
+	  	sda.alt.fixedProcessingCost
 	  	+
-	  	pstep.alt.fixedProcessingCost
+	  	sda.alt.variableProcessingCost * sda.demand.quantity
 	  );
-dexpr float WeightedProcessingCost =
-    TotalProcessingCost * item(CriterionWeights, ord(CriterionWeights, <"ProcessingCost">)).weight;
+dexpr float TotalSetupCost = 0; //TODO, obviously
 
-// setup cost
-dexpr float TotalSetupCost = 0;
-dexpr float WeightedSetupCost = 
-    TotalSetupCost * item(CriterionWeights, ord(CriterionWeights, <"SetupCost">)).weight;
-
-// tardiness cost
+// Tardiness cost per demand
 pwlfunction tardinessCost[d in Demands] =
 	piecewise{
 		0->d.dueTime;
-		d.tardinessVariableCost
+		d.tardinessVariableCost*d.quantity
 	}(d.dueTime,0);
-dexpr float TotalTardinessCost =
+dexpr float TotalTardinessCost = 0*
 	sum(d in Demands)
-	  presenceOf(productionInterval[d])*
-	  endEval(productionInterval[d], tardinessCost[d], 0);
+	  presenceOf(demandIntervals[d])*endEval(demandIntervals[d],tardinessCost[d],0);
+
+dexpr float WeightedNonDeliveryCost = 
+    TotalNonDeliveryCost * item(CriterionWeights, ord(CriterionWeights, <"NonDeliveryCost">)).weight;
+
+dexpr float WeightedProcessingCost =
+    TotalProcessingCost * item(CriterionWeights, ord(CriterionWeights, <"ProcessingCost">)).weight;
+
+dexpr float WeightedSetupCost = 
+    TotalSetupCost * item(CriterionWeights, ord(CriterionWeights, <"SetupCost">)).weight;
+
 dexpr float WeightedTardinessCost =
   TotalTardinessCost * item(CriterionWeights, ord(CriterionWeights, <"TardinessCost">)).weight;
 
-// minimise combined cost
 minimize WeightedNonDeliveryCost + WeightedProcessingCost + WeightedSetupCost + WeightedTardinessCost;
 
+
 subject to {
+	// Match up stepDemandIntervals with stepDemandAlternativeIntervals
+	forall(sda in stepDemandAlternatives) {
+		startAtStart(
+			stepDemandIntervals[<sda.demand, sda.stepPrototype>],
+			stepDemandAlternativeIntervals[sda]
+		);
+		endAtEnd(
+			stepDemandIntervals[<sda.demand, sda.stepPrototype>],
+			stepDemandAlternativeIntervals[sda]
+		);	
+	}
+	// For all stepDemand, exactly one stepDemandAlternative must be selected
+	forall(sd in stepDemands) {
+		presenceOf(stepDemandIntervals[sd])
+		==
+		sum(alt in Alternatives : alt.stepId == sd.stepPrototype.stepId)
+		  presenceOf(stepDemandAlternativeIntervals[
+		  	<sd.demand, sd.stepPrototype, alt>
+		  ]);
+	}
 	
-	// a demand should be delivered within its delivery window
-	forall(d in Demands)
-	  presenceOf(productionInterval[d])
-	  =>
-	  (
-	  	endOf(productionInterval[d]) <= d.deliveryMax
-	  	&&
-	  	endOf(productionInterval[d]) >= d.deliveryMin
-	  );
+	// machines can only do one step at a time
+	//forall(r in Resources)
+	//  noOverlap(machineSchedules[r]);
 	
-	// productionSteps must adhere to precedence
-	forall(precedence in Precedences)
-	  forall(step1, step2 in productionSteps :
-	  		step1.stepPrototype.stepId == precedence.predecessorId &&
-	  		step2.stepPrototype.stepId == precedence.successorId
-	  	)
-	  	endBeforeStart(
-	  		productionStepInterval[step1],
-	  		productionStepInterval[step2]
-	  	);
-	
-	// there may not be any overlap in the sequence of production steps
-	// performed on any one machine
-	forall(r in Resources)
-	  noOverlap(productionStepIntervalsOnResource[r]);
-	
-	// --------------
-	// MAINTAIN DVARS
-	
-	// productionInterval needs to span its individual steps
-	forall(d in Demands)
-	  span(
-	  	productionInterval[d],
-	  	all(s in productionSteps : d == s.demand)
-	  		productionStepInterval[s]
-	  );
-	
-	// iff a production interval of a demand is present then for all
-	// prototypes of productionSteps of that demand, there should be
-	// exactly one interval for a concrete step present.
-	forall(prot in productionStepPrototypes)
-	  presenceOf(productionInterval[prot.demand])
-	  ==
-	  sum(s in productionSteps :
-	  		s.demand == prot.demand &&
-	  		s.stepPrototype == prot.stepPrototype
-	  	)
-	  	presenceOf(productionStepInterval[s]);
-	  	
+	/*
+	// enforce precedence
+	forall(d in Demands, p in Precedences){
+		forall(sda_pre, sda_succ in stepDemandAlternatives :
+			sda_pre .stepPrototype.stepId == p.predecessorId &&
+			sda_succ.stepPrototype.stepId == p.successorId
+		)
+		  endBeforeStart(
+		  	stepDemandAlternativeIntervals[sda_pre],
+		  	stepDemandAlternativeIntervals[sda_succ]
+		  );
+	}
+	*/
+
+    // All demands that are scheduled, should span its steps
+    forall(d in Demands)
+        span(demandIntervals[d], all(s in stepDemands: s.demand.demandId == d.demandId) stepDemandIntervals[s]);
+        
+    // All demands that are scheduled, should have their steps present
+    forall(d in Demands)
+        forall(s in stepDemands: s.demand.demandId == d.demandId)
+            presenceOf(demandIntervals[d]) => presenceOf(stepDemandIntervals[s]);
+
+
+	//*
+	// At all times, we cannot deliver before it is needed or after it is not needed anymore
+	forall(d in Demands){    
+    	// Demand is not delivered, or it is delivered within delivery window
+    	
+        presenceOf(demandIntervals[d]) == 0
+        ||
+        (
+	        // Do not deliver before it is needed, since we cannot store finalized products
+	        endOf(demandIntervals[d]) >= d.deliveryMin
+	        &&
+	        // Do not deliver after it is needed
+	        endOf(demandIntervals[d]) <= d.deliveryMax
+        );
+	}
+	//*/
 }
 
 // ----- This should help with generation according description -----
