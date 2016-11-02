@@ -140,7 +140,13 @@ dvar interval productionStepInterval[p in productionSteps]
 	;
 
 dvar interval productionInterval[d in Demands]
-	optional;
+	optional
+	;
+
+dvar interval storageUseInterval[s in Precedences]
+	optional (s.delayMin == 0) // only optional if no delay between steps is required
+	size s.delayMin .. s.delayMax
+	;
 
 dvar sequence productionStepIntervalsOnResource[r in Resources]
 	in all(p in productionStepsOnResource[r]) productionStepInterval[p];
@@ -207,12 +213,21 @@ subject to {
 	  forall(step1, step2 in productionSteps :
 	  		step1.stepPrototype.stepId == precedence.predecessorId &&
 	  		step2.stepPrototype.stepId == precedence.successorId
-	  	)
+	  	) {
 	  	endBeforeStart(
 	  		productionStepInterval[step1],
 	  		productionStepInterval[step2]
 	  	);
-	
+	  	endAtStart(
+	  		productionStepInterval[step1],
+	  		storageUseInterval[precedence]
+	  	);
+	  	endAtStart(
+	  		storageUseInterval[precedence],
+	  		productionStepInterval[step2]
+	  	);
+  	  }
+  	
 	// there may not be any overlap in the sequence of production steps
 	// performed on any one machine
 	forall(r in Resources)
