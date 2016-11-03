@@ -122,6 +122,7 @@ tuple ProductionStep {
 tuple StorageStep {
 	key Precedence prec;
 	key StorageProduction storage;
+	key Demand demand;
 	StorageTank tank;
 }
 
@@ -149,11 +150,19 @@ int productionTime[p in productionSteps] = ftoi(ceil(
 	{<productId1, productId2, setupTime>|
 		<r.setup_matrixId, productId1, productId2, setupTime, _> in Setups
 	};
+{triplet} storageTransitionTimes[t in StorageTanks] =
+	{<productId1, productId2, setupTime>|
+		<t.setupMatrixId, productId1, productId2, setupTime, _> in Setups
+	};
 
 // setup costs
 {triplet} resourceTransitionCosts[r in Resources] =
 	{<productId1, productId2, setupCost>|
 		<r.setup_matrixId, productId1, productId2, _, setupCost> in Setups
+	};
+{triplet} storageTransitionCosts[t in StorageTanks] =
+	{<productId1, productId2, setupCost>|
+		<t.setupMatrixId, productId1, productId2, _, setupCost> in Setups
 	};
 
 // All production steps by resource used
@@ -162,8 +171,11 @@ int productionTime[p in productionSteps] = ftoi(ceil(
 
 // All storage steps
 {StorageStep} storageSteps =
-	{<p, s, t>|
-		p in Precedences,
+	{<p, s, step1.demand, t>|
+		step1, step2 in productionSteps,
+		p in Precedences :
+			p.predecessorId == step1.stepPrototype.stepId &&
+			p.successorId   == step2.stepPrototype.stepId,
 		s in StorageProductions :
 			p.predecessorId == s.prodStepId &&
 			p.successorId == s.consStepId,
@@ -180,7 +192,7 @@ dvar interval productionInterval[d in Demands]
 	;
 
 dvar interval storageUseInterval[s in storageSteps]
-	optional(s.prec.delayMin == 0) // only optional if no delay between steps is required
+	optional // see dvar maintanance constraints
 	size s.prec.delayMin .. s.prec.delayMax
 	;
 
@@ -198,9 +210,6 @@ cumulfunction tankCapacity[t in StorageTanks] = 0;
 {triplet} tankSetupTimes[t in StorageTanks] = {<productId1, productId2, setupTime> |
 		<t.setupMatrixId, productId1, productId2, setupTime, _> in Setups
 	};
-
-// Build a statefunction to enforce single product in tank
-statefunction productInTank[t in StorageTanks] with tankSetupTimes[t];
 
 // ----------------
 // COST CALCULATION
@@ -302,7 +311,7 @@ subject to {
 	  noOverlap(productionStepIntervalsOnResource[r]);
 	forall(r in Resources)
 	  noOverlap(productionStepIntervalsOnResource[r], resourceTransitionTimes[r], 1);
-	
+		
 	// --------------
 	// MAINTAIN DVARS
 	
@@ -326,16 +335,24 @@ subject to {
 	  	)
 	  	presenceOf(productionStepInterval[s]);
 
-
 	// Cap maximum capacity of all storageTanks
 	forall(s in StorageTanks)
 		tankCapacity[s] <= s.quantityMax;  
 		
-//	forall(s in StorageTanks)
-//		forall(ss in storageUseInterval[s])
+	//forall(s in StorageTanks)
+		//forall(ss in storageUseInterval[s])
+			//alwaysEqual();
 			
 			
-			
+	// storage is not used when demand is not delivered
+	forall(s in storageSteps)
+	  presenceOf(storageUseInterval[s]) => presenceOf(productionInterval[s.demand]);
+	// storage must be used when demand is delivered and min delay is
+	// larger than zero
+	forall(s in storageSteps)
+	  (presenceOf(productionInterval[s.demand]) && s.prec.delayMin > 0)
+	  =>
+	  presenceOf(storageUseInterval[s]);
 }
 
 // ----- This should help with generation according description -----
