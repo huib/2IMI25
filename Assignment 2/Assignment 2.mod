@@ -150,11 +150,19 @@ int productionTime[p in productionSteps] = ftoi(ceil(
 	{<productId1, productId2, setupTime>|
 		<r.setup_matrixId, productId1, productId2, setupTime, _> in Setups
 	};
+{triplet} storageTransitionTimes[t in StorageTanks] =
+	{<productId1, productId2, setupTime>|
+		<t.setupMatrixId, productId1, productId2, setupTime, _> in Setups
+	};
 
 // setup costs
 {triplet} resourceTransitionCosts[r in Resources] =
 	{<productId1, productId2, setupCost>|
 		<r.setup_matrixId, productId1, productId2, _, setupCost> in Setups
+	};
+{triplet} storageTransitionCosts[t in StorageTanks] =
+	{<productId1, productId2, setupCost>|
+		<t.setupMatrixId, productId1, productId2, _, setupCost> in Setups
 	};
 
 // All production steps by resource used
@@ -184,7 +192,7 @@ dvar interval productionInterval[d in Demands]
 	;
 
 dvar interval storageUseInterval[s in storageSteps]
-	optional(s.prec.delayMin == 0) // only optional if no delay between steps is required
+	optional // see dvar maintanance constraints
 	size s.prec.delayMin .. s.prec.delayMax
 	;
 
@@ -194,8 +202,8 @@ dvar sequence productionStepIntervalsOnResource[r in Resources]
 	;
 
 dvar sequence storageUseIntervalsInTank[t in StorageTanks]
-	in all(s in storageSteps) storageUseInterval[s]
-	//types all(s in storageSteps)
+	in    all(s in storageSteps : t == s.tank) storageUseInterval[s]
+	types all(s in storageSteps : t == s.tank) s.demand.productId
 	;
 
 // ----------------
@@ -299,6 +307,13 @@ subject to {
 	forall(r in Resources)
 	  noOverlap(productionStepIntervalsOnResource[r], resourceTransitionTimes[r], 1);
 	
+	// there may not be any overlap in the sequence of storage steps
+	// that use any one storage tank
+	forall(t in StorageTanks)
+	  noOverlap(storageUseIntervalsInTank[t]);
+	forall(t in StorageTanks)
+	  noOverlap(storageUseIntervalsInTank[t], storageTransitionTimes[t], 1);
+	
 	// --------------
 	// MAINTAIN DVARS
 	
@@ -321,7 +336,16 @@ subject to {
 	  		s.stepPrototype == prot.stepPrototype
 	  	)
 	  	presenceOf(productionStepInterval[s]);
-	  	
+	
+	// storage is not used when demand is not delivered
+	forall(s in storageSteps)
+	  presenceOf(storageUseInterval[s]) => presenceOf(productionInterval[s.demand]);
+	// storage must be used when demand is delivered and min delay is
+	// larger than zero
+	forall(s in storageSteps)
+	  (presenceOf(productionInterval[s.demand]) && s.prec.delayMin > 0)
+	  =>
+	  presenceOf(storageUseInterval[s]);
 }
 
 // ----- This should help with generation according description -----
