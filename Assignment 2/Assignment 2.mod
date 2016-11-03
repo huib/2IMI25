@@ -122,6 +122,7 @@ tuple ProductionStep {
 tuple StorageStep {
 	key Precedence prec;
 	key StorageProduction storage;
+	key Demand demand;
 	StorageTank tank;
 }
 
@@ -162,8 +163,11 @@ int productionTime[p in productionSteps] = ftoi(ceil(
 
 // All storage steps
 {StorageStep} storageSteps =
-	{<p, s, t>|
-		p in Precedences,
+	{<p, s, step1.demand, t>|
+		step1, step2 in productionSteps,
+		p in Precedences :
+			p.predecessorId == step1.stepPrototype.stepId &&
+			p.successorId   == step2.stepPrototype.stepId,
 		s in StorageProductions :
 			p.predecessorId == s.prodStepId &&
 			p.successorId == s.consStepId,
@@ -189,8 +193,10 @@ dvar sequence productionStepIntervalsOnResource[r in Resources]
 	types all(p in productionStepsOnResource[r]) p.demand.productId
 	;
 
-//dvar sequence storageUseIntervalsInTank[t in StorageTanks]
-//	in all(s in storageSteps) storageUseInterval[s];
+dvar sequence storageUseIntervalsInTank[t in StorageTanks]
+	in all(s in storageSteps) storageUseInterval[s]
+	//types all(s in storageSteps)
+	;
 
 // ----------------
 // COST CALCULATION
