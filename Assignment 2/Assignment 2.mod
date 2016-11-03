@@ -337,6 +337,7 @@ subject to {
 	forall(s in StorageTanks)
 		tankCapacity[s] <= s.quantityMax;
 
+	// Make sure types match
 	forall(s in StorageTanks)
 		forall(st in storageSteps : st.tank == s)
 			alwaysEqual(tankState[s], storageUseInterval[st], st.demand.productId);
