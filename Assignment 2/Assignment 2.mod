@@ -98,6 +98,13 @@ execute {
     cp.param.TimeLimit = Opl.card(Demands); 
 }
 
+// general purpose
+tuple triplet {
+	int x;
+	int y;
+	int z;
+}
+
 // The prototype of a step in the production process of a demand
 tuple ProductionStepPrototype {
 	key Demand demand;
@@ -109,6 +116,13 @@ tuple ProductionStep {
 	key Demand demand;
 	key StepPrototype stepPrototype;
 	key Alternative alt;
+}
+
+//
+tuple StorageStep {
+	key Precedence prec;
+	key StorageProduction storage;
+	StorageTank tank;
 }
 
 // The prototypes of all ProductionSteps
@@ -130,9 +144,31 @@ int productionTime[p in productionSteps] = ftoi(ceil(
 		+ p.alt.fixedProcessingTime
 	));
 
+// setup times
+{triplet} resourceTransitionTimes[r in Resources] =
+	{<productId1, productId2, setupTime>|
+		<r.setup_matrixId, productId1, productId2, setupTime, _> in Setups
+	};
+
+// setup costs
+{triplet} resourceTransitionCosts[r in Resources] =
+	{<productId1, productId2, setupCost>|
+		<r.setup_matrixId, productId1, productId2, _, setupCost> in Setups
+	};
+
 // All production steps by resource used
 {ProductionStep} productionStepsOnResource[r in Resources] =
 	{pstep| pstep in productionSteps : pstep.alt.resourceId == r.resourceId};
+
+// All storage steps
+{StorageStep} storageSteps =
+	{<p, s, t>|
+		p in Precedences,
+		s in StorageProductions :
+			p.predecessorId == s.prodStepId &&
+			p.successorId == s.consStepId,
+		t in StorageTanks : s.storageTankId == t.storageTankId
+	};	
 
 dvar interval productionStepInterval[p in productionSteps]
 	optional
@@ -143,13 +179,18 @@ dvar interval productionInterval[d in Demands]
 	optional
 	;
 
-dvar interval storageUseInterval[s in Precedences]
-	optional (s.delayMin == 0) // only optional if no delay between steps is required
-	size s.delayMin .. s.delayMax
+dvar interval storageUseInterval[s in storageSteps]
+	optional(s.prec.delayMin == 0) // only optional if no delay between steps is required
+	size s.prec.delayMin .. s.prec.delayMax
 	;
 
 dvar sequence productionStepIntervalsOnResource[r in Resources]
-	in all(p in productionStepsOnResource[r]) productionStepInterval[p];
+	in all(p in productionStepsOnResource[r]) productionStepInterval[p]
+	types all(p in productionStepsOnResource[r]) p.demand.productId
+	;
+
+//dvar sequence storageUseIntervalsInTank[t in StorageTanks]
+//	in all(s in storageSteps) storageUseInterval[s];
 
 // ----------------
 // COST CALCULATION
@@ -213,33 +254,44 @@ subject to {
 	  forall(step1, step2 in productionSteps :
 	  		step1.stepPrototype.stepId == precedence.predecessorId &&
 	  		step2.stepPrototype.stepId == precedence.successorId
-	  	) {	  	
+	  	) {
 	  	// end of previous step and start of next must be exactly
 	  	// as far appart als the size of the storage use (0 if no
 	  	// storage is used)
+	  	// at most one storageStep is used per precedence, so taking
+	  	// max of sizeOf() results in the sizeOf that one storageStep
 	  	endAtStart(
 	  		productionStepInterval[step1],
 	  		productionStepInterval[step2],
-	  		sizeOf(storageUseInterval[precedence], 0)
+	  		max(s in storageSteps : s.prec == precedence)
+	  			sizeOf(storageUseInterval[s], 0)
 	  	);
-	  	// if present, end of previous step and start of storage
-	  	// must coincide
-	  	endAtStart(
-	  		productionStepInterval[step1],
-	  		storageUseInterval[precedence]
-	  	);
-	  	// if present, end of storage and start of next step
-	  	// must coincide
-	  	endAtStart(
-	  		storageUseInterval[precedence],
-	  		productionStepInterval[step2]
-	  	);
+	  	
+	  	// for all storage steps associated with this precedence,
+	  	// check the storage interval. At most one storage interval
+	  	// is present
+	  	forall(s in storageSteps : s.prec == precedence) {
+		  	// if present, end of previous step and start of storage
+		  	// must coincide
+		  	endAtStart(
+		  		productionStepInterval[step1],
+		  		storageUseInterval[s]
+		  	);
+		  	// if present, end of storage and start of next step
+		  	// must coincide
+		  	endAtStart(
+		  		storageUseInterval[s],
+		  		productionStepInterval[step2]
+		  	);
+ 		}		 
   	  }
   	
 	// there may not be any overlap in the sequence of production steps
 	// performed on any one machine
 	forall(r in Resources)
 	  noOverlap(productionStepIntervalsOnResource[r]);
+	forall(r in Resources)
+	  noOverlap(productionStepIntervalsOnResource[r], resourceTransitionTimes[r], 1);
 	
 	// --------------
 	// MAINTAIN DVARS
