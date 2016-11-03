@@ -187,10 +187,20 @@ dvar interval storageUseInterval[s in storageSteps]
 dvar sequence productionStepIntervalsOnResource[r in Resources]
 	in all(p in productionStepsOnResource[r]) productionStepInterval[p]
 	types all(p in productionStepsOnResource[r]) p.demand.productId
-	;
+	;	
+	
+// Storage tank stuff
 
-//dvar sequence storageUseIntervalsInTank[t in StorageTanks]
-//	in all(s in storageSteps) storageUseInterval[s];
+// Build a cumulfunction to store the amount stored in tanks;
+cumulfunction tankCapacity[t in StorageTanks] = 0;
+
+// Setup times for a storage function
+{triplet} tankSetupTimes[t in StorageTanks] = {<productId1, productId2, setupTime> |
+		<t.setupMatrixId, productId1, productId2, setupTime, _> in Setups
+	};
+
+// Build a statefunction to enforce single product in tank
+statefunction productInTank[t in StorageTanks] with tankSetupTimes[t];
 
 // ----------------
 // COST CALCULATION
@@ -315,7 +325,17 @@ subject to {
 	  		s.stepPrototype == prot.stepPrototype
 	  	)
 	  	presenceOf(productionStepInterval[s]);
-	  	
+
+
+	// Cap maximum capacity of all storageTanks
+	forall(s in StorageTanks)
+		tankCapacity[s] <= s.quantityMax;  
+		
+//	forall(s in StorageTanks)
+//		forall(ss in storageUseInterval[s])
+			
+			
+			
 }
 
 // ----- This should help with generation according description -----
