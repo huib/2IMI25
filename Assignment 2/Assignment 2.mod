@@ -204,12 +204,10 @@ dvar sequence productionStepIntervalsOnResource[r in Resources]
 // Storage tank stuff
 
 // Build a cumulfunction to store the amount stored in tanks;
-cumulfunction tankCapacity[t in StorageTanks] = 0;
+cumulfunction tankCapacity[t in StorageTanks] = sum(s in storageSteps : s.tank == t) pulse(storageUseInterval[s], s.demand.quantity);
 
-// Setup times for a storage function
-{triplet} tankSetupTimes[t in StorageTanks] = {<productId1, productId2, setupTime> |
-		<t.setupMatrixId, productId1, productId2, setupTime, _> in Setups
-	};
+// Statefunction for storing single products in tanks
+statefunction tankState[s in StorageTanks] with storageTransitionTimes[s];
 
 // ----------------
 // COST CALCULATION
@@ -337,12 +335,11 @@ subject to {
 
 	// Cap maximum capacity of all storageTanks
 	forall(s in StorageTanks)
-		tankCapacity[s] <= s.quantityMax;  
-		
-	//forall(s in StorageTanks)
-		//forall(ss in storageUseInterval[s])
-			//alwaysEqual();
-			
+		tankCapacity[s] <= s.quantityMax;
+
+	forall(s in StorageTanks)
+		forall(st in storageSteps : st.tank == s)
+			alwaysEqual(tankState[s], storageUseInterval[st], st.demand.productId);
 			
 	// storage is not used when demand is not delivered
 	forall(s in storageSteps)
