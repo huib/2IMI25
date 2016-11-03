@@ -117,7 +117,7 @@ tuple ProductionStep {
 		demand in Demands,
 		stepProt in Steps : stepProt.productId == demand.productId
 	};
-	
+
 // All possible ProductionSteps
 {ProductionStep} productionSteps =
 	{<demand, stepProt, alt>|
@@ -213,15 +213,23 @@ subject to {
 	  forall(step1, step2 in productionSteps :
 	  		step1.stepPrototype.stepId == precedence.predecessorId &&
 	  		step2.stepPrototype.stepId == precedence.successorId
-	  	) {
-	  	endBeforeStart(
+	  	) {	  	
+	  	// end of previous step and start of next must be exactly
+	  	// as far appart als the size of the storage use (0 if no
+	  	// storage is used)
+	  	endAtStart(
 	  		productionStepInterval[step1],
-	  		productionStepInterval[step2]
+	  		productionStepInterval[step2],
+	  		sizeOf(storageUseInterval[precedence], 0)
 	  	);
+	  	// if present, end of previous step and start of storage
+	  	// must coincide
 	  	endAtStart(
 	  		productionStepInterval[step1],
 	  		storageUseInterval[precedence]
 	  	);
+	  	// if present, end of storage and start of next step
+	  	// must coincide
 	  	endAtStart(
 	  		storageUseInterval[precedence],
 	  		productionStepInterval[step2]
