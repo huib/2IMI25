@@ -266,16 +266,14 @@ float setupWeight       = item(CriterionWeights, ord(CriterionWeights, <"SetupCo
 float tardinessWeight   = item(CriterionWeights, ord(CriterionWeights, <"TardinessCost">)).weight;
 
 // Non delivery cost
-dexpr float TotalNonDeliveryCost =
-	sum(d in Demands)
+dexpr float nonDeliveryCost[d in Demands] =
 	  (1-presenceOf(productionInterval[d]))*
 	  d.quantity*d.nonDeliveryVariableCost;
-dexpr float WeightedNonDeliveryCost = 
-    TotalNonDeliveryCost * nonDeliveryWeight;
+dexpr float TotalNonDeliveryCost = sum(d in Demands) nonDeliveryCost[d];
+dexpr float WeightedNonDeliveryCost = nonDeliveryWeight * TotalNonDeliveryCost;
 
 // processing cost
-dexpr float TotalProcessingCost =
-	sum(pstep in productionSteps)
+dexpr float processingCostOfStep[pstep in productionSteps] =
 	  presenceOf(productionStepInterval[pstep])
 	  *
 	  (
@@ -283,18 +281,19 @@ dexpr float TotalProcessingCost =
 	  	+
 	  	pstep.alt.fixedProcessingCost
 	  );
-dexpr float WeightedProcessingCost =
-    TotalProcessingCost * processingWeight;
+dexpr float TotalProcessingCost =
+	sum(pstep in productionSteps) processingCostOfStep[pstep];
+dexpr float WeightedProcessingCost = processingWeight * TotalProcessingCost;
 
 // setup cost
-dexpr float TotalSetupCost = //0; /*
-	(sum(s in productionSteps)
+dexpr float setupCostOfStep[s in productionSteps] =
 	  presenceOf(resourceSetupInterval[s])*
 	  resourceTransitionCosts
 			[<s.alt.resourceId>]
 			[previousProductId[s]]
-			[s.demand.productId]
-	) //*/
+			[s.demand.productId];
+dexpr float TotalSetupCost = //0; /*
+	(sum(s in productionSteps) setupCostOfStep[s]) //*/
 	+
 	(0 //sum(s in storageSteps)
 		//presenceOf(storageSetupInterval[s])*
@@ -303,21 +302,19 @@ dexpr float TotalSetupCost = //0; /*
 		//	[product of previous storage in s.tank (unsure..)]
 		//	[product of storage step (possible)]
 	);
-dexpr float WeightedSetupCost = 
-    TotalSetupCost * setupWeight;
+dexpr float WeightedSetupCost = setupWeight * TotalSetupCost;
 
 // tardiness cost
-pwlfunction tardinessCost[d in Demands] =
+pwlfunction tardinessCostFunction[d in Demands] =
 	piecewise{
 		0->d.dueTime;
 		d.tardinessVariableCost
 	}(d.dueTime,0);
-dexpr float TotalTardinessCost =
-	sum(d in Demands)
+dexpr float tardinessCost[d in Demands] =
 	  presenceOf(productionInterval[d])*
-	  endEval(productionInterval[d], tardinessCost[d], 0);
-dexpr float WeightedTardinessCost =
-  TotalTardinessCost * tardinessWeight;
+	  endEval(productionInterval[d], tardinessCostFunction[d], 0);
+dexpr float TotalTardinessCost = sum(d in Demands) tardinessCost[d];
+dexpr float WeightedTardinessCost =	tardinessWeight * TotalTardinessCost;
 
 dexpr float totalWeightedCost = WeightedNonDeliveryCost + WeightedProcessingCost + WeightedSetupCost + WeightedTardinessCost;
 // minimise combined cost
@@ -496,18 +493,7 @@ subject to {
 	totalWeightedCost >= overlyOptimisticCost;
 }
 
-// ----- This should help with generation according description -----
-/*{DemandAssignment} demandAssignments =
-{<d.demandId, 
-  startOf(something), 
-  endOf(something), 
-  someExpression,
-  someOtherExpression> 
- | d in Demands
-};
-*/
-// ----- End ----
-
+// -------------------
 // Report on solutions
 tuple DemandAssignment {
   key string demandId; 
@@ -517,8 +503,14 @@ tuple DemandAssignment {
   float tardinessCost;
 };
 
-// TODO, fill variable
-{DemandAssignment} demandAssignments = {};
+{DemandAssignment} demandAssignments =
+{<d.demandId, 
+  startOf(productionInterval[d]), 
+  endOf(productionInterval[d]), 
+  nonDeliveryCost[d],
+  tardinessCost[d]> 
+ | d in Demands
+};
 
 tuple StepAssignment {
   key string demandId; 
@@ -533,8 +525,18 @@ tuple StepAssignment {
   string setupResourceId;
 };
 
-// TODO, fill variable
-{StepAssignment} stepAssignments = {};
+{StepAssignment} stepAssignments =
+{<s.demand.demandId,
+	s.stepPrototype.stepId,
+	startOf(productionStepInterval[s]),
+	endOf(productionStepInterval[s]),
+	s.alt.resourceId,
+	processingCostOfStep[s],
+	setupCostOfStep[s],
+	startOf(resourceSetupInterval[s]),
+	endOf(resourceSetupInterval[s]),
+	s.stepPrototype.setupResourceId
+> | s in productionSteps : presenceOf(productionStepInterval[s])};
 
 tuple StorageAssignment {
   key string demandId; 
@@ -545,8 +547,18 @@ tuple StorageAssignment {
   string storageTankId;
 };
 
-// TODO, fill variable
-{StorageAssignment} storageAssignments = {};
+{StorageAssignment} storageAssignments = {}; /* ERROR:
+//Beschrijving	Resource	Pad	Locatie	Type
+//Duplicate key "<"Demand0_1", "ActFerment0">" in "storageAssignments".	Assignment 2.mod	/Assignment 2	551:1-557:59 X:\2IMI25\Assignment 2\Assignment 2.mod	OPL Problem Marker
+
+{<s.prototype.demand.demandId,
+	s.storage.prodStepId, //TODO, maybe we need a different productionStepId..
+	startOf(storageUseInterval[s]),
+	endOf(storageUseInterval[s]),
+	s.prototype.demand.quantity, //TODO, maybe we need total amount in the tank instead
+	s.tank.storageTankId
+> | s in storageSteps : presenceOf(storageUseInterval[s])};
+//*/
 
 execute {
       writeln("Total Non-Delivery Cost    : ", TotalNonDeliveryCost);
