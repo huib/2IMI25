@@ -118,11 +118,19 @@ tuple ProductionStep {
 	key Alternative alt;
 }
 
-//
-tuple StorageStep {
+// The prototype of a storage step between two concrete
+// production steps (no tank is chosen)
+tuple StorageStepPrototype {
 	key Precedence prec;
-	key StorageProduction storage;
 	key Demand demand;
+}
+
+// A concrete storage step (a tank is chosen)
+tuple StorageStep {
+	key StorageStepPrototype prototype;
+	//key Precedence prec;
+	key StorageProduction storage;
+	//key Demand demand;
 	StorageTank tank;
 }
 
@@ -169,22 +177,29 @@ int productionTime[p in productionSteps] = ftoi(ceil(
 {ProductionStep} productionStepsOnResource[r in Resources] =
 	{pstep| pstep in productionSteps : pstep.alt.resourceId == r.resourceId};
 
-// All storage steps
-{StorageStep} storageSteps =
-	{<p, s, step1.demand, t>|
-		step1, step2 in productionSteps,
+// Between all consecutive production steps of a demand, we have
+// a storage step prototype
+{StorageStepPrototype} storageStepPrototypes =
+	{<p, step1.demand>|
+		step1, step2 in productionSteps :
+			step1.demand == step2.demand,
 		p in Precedences :
 			p.predecessorId == step1.stepPrototype.stepId &&
-			p.successorId   == step2.stepPrototype.stepId,
+			p.successorId   == step2.stepPrototype.stepId
+	};
+
+// All options for tank choices for all storage step prototypes
+{StorageStep} storageSteps =
+	{<<p, d>, s, t>|
+		<p, d> in storageStepPrototypes,
 		s in StorageProductions :
 			p.predecessorId == s.prodStepId &&
 			p.successorId == s.consStepId,
 		t in StorageTanks : s.storageTankId == t.storageTankId
-	};	
+	};
 
 dvar interval productionStepInterval[p in productionSteps]
 	optional
-	size productionTime[p]
 	;
 
 dvar interval productionInterval[d in Demands]
@@ -193,7 +208,7 @@ dvar interval productionInterval[d in Demands]
 
 dvar interval storageUseInterval[s in storageSteps]
 	optional // see dvar maintanance constraints
-	size s.prec.delayMin .. s.prec.delayMax
+	size s.prototype.prec.delayMin .. s.prototype.prec.delayMax
 	;
 
 dvar sequence productionStepIntervalsOnResource[r in Resources]
@@ -204,7 +219,7 @@ dvar sequence productionStepIntervalsOnResource[r in Resources]
 // Storage tank stuff
 
 // Build a cumulfunction to store the amount stored in tanks;
-cumulfunction tankCapacity[t in StorageTanks] = sum(s in storageSteps : s.tank == t) pulse(storageUseInterval[s], s.demand.quantity);
+cumulfunction tankCapacity[t in StorageTanks] = sum(s in storageSteps : s.tank == t) pulse(storageUseInterval[s], s.prototype.demand.quantity);
 
 // Statefunction for storing single products in tanks
 statefunction tankState[s in StorageTanks] with storageTransitionTimes[s];
@@ -266,11 +281,17 @@ subject to {
 	  	endOf(productionInterval[d]) >= d.deliveryMin
 	  );
 	
+	// production steps should take at least as much time as needed
+	forall(s in productionSteps)
+	  presenceOf(productionStepInterval[s])
+	  => sizeOf(productionStepInterval[s]) >= productionTime[s];
+	
 	// productionSteps must adhere to precedence
 	forall(precedence in Precedences)
 	  forall(step1, step2 in productionSteps :
 	  		step1.stepPrototype.stepId == precedence.predecessorId &&
-	  		step2.stepPrototype.stepId == precedence.successorId
+	  		step2.stepPrototype.stepId == precedence.successorId &&
+	  		step1.demand == step2.demand
 	  	) {
 	  	// end of previous step and start of next must be exactly
 	  	// as far appart als the size of the storage use (0 if no
@@ -280,14 +301,18 @@ subject to {
 	  	endAtStart(
 	  		productionStepInterval[step1],
 	  		productionStepInterval[step2],
-	  		max(s in storageSteps : s.prec == precedence)
+	  		max(s in storageSteps : s.prototype.prec == precedence)
+	  			presenceOf(storageUseInterval[s]) *
 	  			sizeOf(storageUseInterval[s], 0)
 	  	);
 	  	
 	  	// for all storage steps associated with this precedence,
 	  	// check the storage interval. At most one storage interval
 	  	// is present
-	  	forall(s in storageSteps : s.prec == precedence) {
+	  	forall(s in storageSteps :
+	  			s.prototype.prec == precedence &&
+	  			s.prototype.demand == step1.demand
+	  		) {
 		  	// if present, end of previous step and start of storage
 		  	// must coincide
 		  	endAtStart(
@@ -300,7 +325,7 @@ subject to {
 		  		storageUseInterval[s],
 		  		productionStepInterval[step2]
 		  	);
- 		}		 
+ 		}
   	  }
   	
 	// there may not be any overlap in the sequence of production steps
@@ -309,9 +334,18 @@ subject to {
 	  noOverlap(productionStepIntervalsOnResource[r]);
 	forall(r in Resources)
 	  noOverlap(productionStepIntervalsOnResource[r], resourceTransitionTimes[r], 1);
-		
-	// --------------
-	// MAINTAIN DVARS
+	
+	// Cap maximum capacity of all storageTanks
+	forall(s in StorageTanks)
+		tankCapacity[s] <= s.quantityMax;
+
+	// Make sure types match
+	forall(s in StorageTanks)
+		forall(st in storageSteps : st.tank == s)
+			alwaysEqual(tankState[s], storageUseInterval[st], st.prototype.demand.productId);
+	
+	// ----------------------------------
+	// MAINTAIN CONSISTENCY BETWEEN DVARS
 	
 	// productionInterval needs to span its individual steps
 	forall(d in Demands)
@@ -333,24 +367,16 @@ subject to {
 	  	)
 	  	presenceOf(productionStepInterval[s]);
 
-	// Cap maximum capacity of all storageTanks
-	forall(s in StorageTanks)
-		tankCapacity[s] <= s.quantityMax;
-
-	// Make sure types match
-	forall(s in StorageTanks)
-		forall(st in storageSteps : st.tank == s)
-			alwaysEqual(tankState[s], storageUseInterval[st], st.demand.productId);
-			
 	// storage is not used when demand is not delivered
 	forall(s in storageSteps)
-	  presenceOf(storageUseInterval[s]) => presenceOf(productionInterval[s.demand]);
-	// storage must be used when demand is delivered and min delay is
+	  presenceOf(storageUseInterval[s]) => presenceOf(productionInterval[s.prototype.demand]);
+	// exactly one storage must be used when demand is delivered and min delay is
 	// larger than zero
-	forall(s in storageSteps)
+	forall(s in storageStepPrototypes)
 	  (presenceOf(productionInterval[s.demand]) && s.prec.delayMin > 0)
 	  =>
-	  presenceOf(storageUseInterval[s]);
+	  1 == sum(storStep in storageSteps : storStep.prototype == s)
+	    presenceOf(storageUseInterval[storStep]);
 }
 
 // ----- This should help with generation according description -----
