@@ -98,6 +98,11 @@ execute {
     cp.param.TimeLimit = Opl.card(Demands); 
 }
 
+{int} productIds = {p.productId | p in Products};
+{string} resourceIds = {r.resourceId | r in Resources};
+Resource resourceByTuple[r in Resources] = r;
+Resource resourceById[r in resourceIds] = resourceByTuple[<r>];
+
 // general purpose
 tuple triplet {
 	int x;
@@ -155,19 +160,28 @@ int productionTime[p in productionSteps] = ftoi(ceil(
 		<t.setupMatrixId, productId1, productId2, setupTime, _> in Setups
 	};
 
+int resourceTransitionTime[r in Resources][prevProd in productIds][nextProd in productIds] =
+	sum(<r.setup_matrixId, prevProd, nextProd, setupTime, _> in Setups)
+	  setupTime;
+int storageTransitionTime[t in StorageTanks][prevProd in Products][nextProd in Products] =
+	sum(<t.setupMatrixId, prevProd.productId, nextProd.productId, setupTime, _> in Setups)
+	  setupTime;
+
 // setup costs
-{triplet} resourceTransitionCosts[r in Resources] =
-	{<productId1, productId2, setupCost>|
-		<r.setup_matrixId, productId1, productId2, _, setupCost> in Setups
-	};
-{triplet} storageTransitionCosts[t in StorageTanks] =
-	{<productId1, productId2, setupCost>|
-		<t.setupMatrixId, productId1, productId2, _, setupCost> in Setups
-	};
+int resourceTransitionCosts[r in Resources][prevProd in Products][nextProd in Products] =
+	sum(<r.setup_matrixId, prevProd.productId, nextProd.productId, _, setupCost> in Setups)
+	  setupCost;
+int storageTransitionCosts[t in StorageTanks][prevProd in Products][nextProd in Products] =
+	sum(<t.setupMatrixId, prevProd.productId, nextProd.productId, _, setupCost> in Setups)
+	  setupCost;
 
 // All production steps by resource used
 {ProductionStep} productionStepsOnResource[r in Resources] =
 	{pstep| pstep in productionSteps : pstep.alt.resourceId == r.resourceId};
+
+// All production steps by the setup resource they might require
+{ProductionStep} productionStepsRequiringSetupResource[r in SetupResources] =
+	{pstep| pstep in productionSteps : pstep.stepPrototype.setupResourceId == r.setupResourceId};
 
 // All storage steps
 {StorageStep} storageSteps =
@@ -199,7 +213,15 @@ dvar interval storageUseInterval[s in storageSteps]
 dvar sequence productionStepIntervalsOnResource[r in Resources]
 	in all(p in productionStepsOnResource[r]) productionStepInterval[p]
 	types all(p in productionStepsOnResource[r]) p.demand.productId
-	;	
+	;
+
+dvar interval resourceSetupInterval[s in productionSteps]
+	optional
+	;
+
+dvar sequence resourceSetupIntervalsBySetupResource[r in SetupResources]
+	in all(s in productionStepsRequiringSetupResource[r]) resourceSetupInterval[s]
+	;
 	
 // Storage tank stuff
 
@@ -235,6 +257,11 @@ dexpr float WeightedProcessingCost =
 
 // setup cost
 dexpr float TotalSetupCost = 0;
+//	sum(r in Resources)
+//	  sum(s in productionSteps : s.alt.resourceId == r.resourceId)
+//	    resourceTransitionCosts[r]
+//	    	[<typeOfPrev(productionStepIntervalsOnResource[r], productionStepInterval[s], r.initial_productId)>]
+//	    	[<s.demand.productId>];
 dexpr float WeightedSetupCost = 
     TotalSetupCost * item(CriterionWeights, ord(CriterionWeights, <"SetupCost">)).weight;
 
@@ -309,9 +336,24 @@ subject to {
 	  noOverlap(productionStepIntervalsOnResource[r]);
 	forall(r in Resources)
 	  noOverlap(productionStepIntervalsOnResource[r], resourceTransitionTimes[r], 1);
+	
+	// there may not be any overlap in the sequence of uses of any one
+	// setup resource: a setup resource may only be used to set up one
+	// resource at a time
+	forall(r in SetupResources)
+	  noOverlap(resourceSetupIntervalsBySetupResource[r]);
+
+	// Cap maximum capacity of all storageTanks
+	forall(s in StorageTanks)
+		tankCapacity[s] <= s.quantityMax;
+
+	// Make sure types match
+	forall(s in StorageTanks)
+		forall(st in storageSteps : st.tank == s)
+			alwaysEqual(tankState[s], storageUseInterval[st], st.demand.productId);
 		
-	// --------------
-	// MAINTAIN DVARS
+	// ----------------------------------
+	// MAINTAIN CONSISTENCY BETWEEN DVARS
 	
 	// productionInterval needs to span its individual steps
 	forall(d in Demands)
@@ -332,15 +374,6 @@ subject to {
 	  		s.stepPrototype == prot.stepPrototype
 	  	)
 	  	presenceOf(productionStepInterval[s]);
-
-	// Cap maximum capacity of all storageTanks
-	forall(s in StorageTanks)
-		tankCapacity[s] <= s.quantityMax;
-
-	// Make sure types match
-	forall(s in StorageTanks)
-		forall(st in storageSteps : st.tank == s)
-			alwaysEqual(tankState[s], storageUseInterval[st], st.demand.productId);
 			
 	// storage is not used when demand is not delivered
 	forall(s in storageSteps)
@@ -351,6 +384,45 @@ subject to {
 	  (presenceOf(productionInterval[s.demand]) && s.prec.delayMin > 0)
 	  =>
 	  presenceOf(storageUseInterval[s]);
+	
+	// for all production steps, the step can only be present and producing a
+	// different product than the product the resource last producted IFF
+	// a resource interval of the correct size is present between the current
+	// and previous step
+	forall(s in productionSteps) {
+		endBeforeStart(resourceSetupInterval[s], productionStepInterval[s]);
+		
+		endOfPrev(
+				productionStepIntervalsOnResource[<s.alt.resourceId>],
+				productionStepInterval[s],
+				0
+			) <= startOf(resourceSetupInterval[s]);
+		
+		//*
+		sizeOf(resourceSetupInterval[s]) ==
+			resourceTransitionTime[<s.alt.resourceId>]
+		  		[typeOfPrev(
+			  		productionStepIntervalsOnResource[<s.alt.resourceId>],
+			  		productionStepInterval[s],
+			  		resourceById[s.alt.resourceId].initial_productId
+		  		)]
+		  		[s.demand.productId];
+		//*/
+		/*
+		presenceOf(resourceSetupInterval[s]) ==
+				// step is present
+				presenceOf(productionStepInterval[s]) &&
+				// and producing a different product than was last produced on this
+				// resource
+				typeOfPrev(
+						productionStepIntervalsOnResource[<s.alt.resourceId>],
+						productionStepInterval[s],
+						resourceById[s.alt.resourceId].initial_productId
+					) != s.demand.productId
+		;
+		//*/
+	}	  
+
 }
 
 // ----- This should help with generation according description -----
