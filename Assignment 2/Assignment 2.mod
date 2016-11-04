@@ -98,6 +98,8 @@ execute {
     cp.param.TimeLimit = Opl.card(Demands); 
 }
 
+// all product ids, since occasionally using <productId> doesn't work as an
+// index for some reason...
 {int} productIds = {p.productId | p in Products};
 
 // general purpose
@@ -207,6 +209,9 @@ int storageTransitionCosts[t in StorageTanks][prevProd in productIds union {-1}]
 		t in StorageTanks : s.storageTankId == t.storageTankId
 	};
 
+// ----------------
+// DVARs AND DEXPRs
+
 dvar interval productionStepInterval[p in productionSteps]
 	optional
 	;
@@ -255,6 +260,10 @@ statefunction tankState[s in StorageTanks] with storageTransitionTimes[s];
 
 // ----------------
 // COST CALCULATION
+float nonDeliveryWeight = item(CriterionWeights, ord(CriterionWeights, <"NonDeliveryCost">)).weight;
+float processingWeight  = item(CriterionWeights, ord(CriterionWeights, <"ProcessingCost">)).weight;
+float setupWeight       = item(CriterionWeights, ord(CriterionWeights, <"SetupCost">)).weight;
+float tardinessWeight   = item(CriterionWeights, ord(CriterionWeights, <"TardinessCost">)).weight;
 
 // Non delivery cost
 dexpr float TotalNonDeliveryCost =
@@ -262,7 +271,7 @@ dexpr float TotalNonDeliveryCost =
 	  (1-presenceOf(productionInterval[d]))*
 	  d.quantity*d.nonDeliveryVariableCost;
 dexpr float WeightedNonDeliveryCost = 
-    TotalNonDeliveryCost * item(CriterionWeights, ord(CriterionWeights, <"NonDeliveryCost">)).weight;
+    TotalNonDeliveryCost * nonDeliveryWeight;
 
 // processing cost
 dexpr float TotalProcessingCost =
@@ -275,7 +284,7 @@ dexpr float TotalProcessingCost =
 	  	pstep.alt.fixedProcessingCost
 	  );
 dexpr float WeightedProcessingCost =
-    TotalProcessingCost * item(CriterionWeights, ord(CriterionWeights, <"ProcessingCost">)).weight;
+    TotalProcessingCost * processingWeight;
 
 // setup cost
 dexpr float TotalSetupCost = //0; /*
@@ -295,7 +304,7 @@ dexpr float TotalSetupCost = //0; /*
 		//	[product of storage step (possible)]
 	);
 dexpr float WeightedSetupCost = 
-    TotalSetupCost * item(CriterionWeights, ord(CriterionWeights, <"SetupCost">)).weight;
+    TotalSetupCost * setupWeight;
 
 // tardiness cost
 pwlfunction tardinessCost[d in Demands] =
@@ -308,13 +317,45 @@ dexpr float TotalTardinessCost =
 	  presenceOf(productionInterval[d])*
 	  endEval(productionInterval[d], tardinessCost[d], 0);
 dexpr float WeightedTardinessCost =
-  TotalTardinessCost * item(CriterionWeights, ord(CriterionWeights, <"TardinessCost">)).weight;
+  TotalTardinessCost * tardinessWeight;
 
 dexpr float totalWeightedCost = WeightedNonDeliveryCost + WeightedProcessingCost + WeightedSetupCost + WeightedTardinessCost;
 // minimise combined cost
 minimize totalWeightedCost;
 
+
+// -----------------------------
+// BOUNDS ON WEIGHTED TOTAL COST
+
+// 1. Deliver nothing: sum all non delivery costs
+float doNothingCost =
+	nonDeliveryWeight*
+	sum(d in Demands) d.nonDeliveryVariableCost*d.quantity;
+
+// 2. Independently calculate the cost of each demand (without them
+// affecting eachother). For easy calculation, assume the fastest
+// alternatives for tardiness and the cheapest alternatives for
+// production cost.
+{ProductionStep} cheapestProductionSteps[d in Demands] = {}; // TODO
+float minimalProductionCost[d in Demands] = 0; // TODO
+{ProductionStep} quickestProductionSteps[d in Demands] = {}; // TODO
+int minimalProductionTime[d in Demands] = 0; // TODO
+float minimalTardiness[d in Demands] = 0; // TODO
+{float} costAlternatives[d in Demands] = {
+		nonDeliveryWeight*d.nonDeliveryVariableCost*d.quantity,
+		processingWeight*minimalProductionCost[d]
+			+ tardinessWeight*minimalTardiness[d]
+	};
+float overlyOptimisticCost =
+	sum(d in Demands) min(cost in costAlternatives[d]) cost;
+
+// 3. something with throughput/bottleneck: hoeveel producteenheden
+// kunnen we uberhaubt produceren, met alles op volle toeren?
+// TODO
+
 subject to {
+	// -------------------------------
+	// PHYSICAL PRODUCTION CONSTRAINTS
 	
 	// a demand should be delivered within its delivery window
 	forall(d in Demands)
@@ -448,20 +489,12 @@ subject to {
 					[previousProductId[p]]
 					[p.demand.productId];
 	}
-}
-
-// -----------------------------
-// BOUNDS ON WEIGHTED TOTAL COST
-
-// 1. Deliver nothing: sum all non delivery costs
-float doNothingCost = sum(d in Demands) d.nonDeliveryVariableCost*d.quantity;
-subject to {
+	
+	// -----------------
+	// APPLY COST BOUNDS
 	totalWeightedCost <= doNothingCost;
+	totalWeightedCost >= overlyOptimisticCost;
 }
-
-// 2. If we assume we have the cheapest and fastest alternatives available for
-// all demands at the same time, and don't charce setup cost
-//float overlyOptimisticCost = sum
 
 // ----- This should help with generation according description -----
 /*{DemandAssignment} demandAssignments =
