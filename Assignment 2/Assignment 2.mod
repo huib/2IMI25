@@ -98,6 +98,8 @@ execute {
     cp.param.TimeLimit = Opl.card(Demands); 
 }
 
+{int} productIds = {p.productId | p in Products};
+
 // general purpose
 tuple triplet {
 	int x;
@@ -162,6 +164,12 @@ int productionTime[p in productionSteps] = ftoi(ceil(
 	{<productId1, productId2, setupTime>|
 		<t.setupMatrixId, productId1, productId2, setupTime, _> in Setups
 	};
+int resourceTransitionTime[r in Resources][prevProd in productIds union {-1}][nextProd in productIds] =
+	sum(<r.setup_matrixId, prevProd, nextProd, setupTime, _> in Setups : prevProd >= 0)
+	  setupTime;
+int storageTransitionTime[t in StorageTanks][prevProd in Products][nextProd in Products] =
+	sum(<t.setupMatrixId, prevProd.productId, nextProd.productId, setupTime, _> in Setups)
+	  setupTime;
 
 // setup costs
 {triplet} resourceTransitionCosts[r in Resources] =
@@ -176,6 +184,9 @@ int productionTime[p in productionSteps] = ftoi(ceil(
 // All production steps by resource used
 {ProductionStep} productionStepsOnResource[r in Resources] =
 	{pstep| pstep in productionSteps : pstep.alt.resourceId == r.resourceId};
+// All production steps by the setup resource they might require
+{ProductionStep} productionStepsRequiringSetupResource[r in SetupResources] =
+	{pstep| pstep in productionSteps : pstep.stepPrototype.setupResourceId == r.setupResourceId};
 
 // Between all consecutive production steps of a demand, we have
 // a storage step prototype
@@ -214,7 +225,28 @@ dvar interval storageUseInterval[s in storageSteps]
 dvar sequence productionStepIntervalsOnResource[r in Resources]
 	in all(p in productionStepsOnResource[r]) productionStepInterval[p]
 	types all(p in productionStepsOnResource[r]) p.demand.productId
-	;	
+	;
+
+dvar interval resourceSetupInterval[s in productionSteps]
+	optional
+//	size TODO?
+	;
+
+dvar sequence resourceSetupIntervalsRequiringSetupResource[r in SetupResources]
+	in all(s in productionStepsRequiringSetupResource[r]) resourceSetupInterval[s]
+	;
+
+dexpr int previousProductId[p in productionSteps] =
+	typeOfPrev(
+		productionStepIntervalsOnResource[item(Resources, <p.alt.resourceId>)],
+		productionStepInterval[p],
+		item(Resources, <p.alt.resourceId>).initial_productId
+	);
+
+dexpr int productionStepNeedsSetup[p in productionSteps] =
+	presenceOf(productionStepInterval[p]) &&
+	previousProductId[p] != -1 &&
+	p.demand.productId != previousProductId[p];
 	
 // Storage tank stuff
 
@@ -335,6 +367,10 @@ subject to {
 	forall(r in Resources)
 	  noOverlap(productionStepIntervalsOnResource[r], resourceTransitionTimes[r], 1);
 	
+	// setup resources can only do one thing at a time
+	forall(r in SetupResources)
+	  noOverlap(resourceSetupIntervalsRequiringSetupResource[r]);
+	
 	// Cap maximum capacity of all storageTanks
 	forall(s in StorageTanks)
 		tankCapacity[s] <= s.quantityMax;
@@ -377,6 +413,28 @@ subject to {
 	  =>
 	  1 == sum(storStep in storageSteps : storStep.prototype == s)
 	    presenceOf(storageUseInterval[storStep]);
+	
+	
+	// a setup interval must be present (and of the right size and time)
+	// when a resource processes a new product type
+	forall(p in productionSteps){	
+		// The end of a setup interval needs to coincide with the start
+		// of the production step
+		endAtStart(resourceSetupInterval[p], productionStepInterval[p]);
+		
+		// the setup must happen iff the resource needs a setup
+		presenceOf(resourceSetupInterval[p])
+			== productionStepNeedsSetup[p];
+		
+		// if the setup happens, it must take exactly the amount of time
+		// as described in the setup matrix
+		presenceOf(resourceSetupInterval[p]) =>
+			sizeOf(resourceSetupInterval[p])
+				== resourceTransitionTime
+					[<p.alt.resourceId>]
+					[previousProductId[p]]
+					[p.demand.productId];
+	}
 }
 
 // ----- This should help with generation according description -----
