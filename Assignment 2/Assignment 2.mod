@@ -172,14 +172,12 @@ int storageTransitionTime[t in StorageTanks][prevProd in Products][nextProd in P
 	  setupTime;
 
 // setup costs
-{triplet} resourceTransitionCosts[r in Resources] =
-	{<productId1, productId2, setupCost>|
-		<r.setup_matrixId, productId1, productId2, _, setupCost> in Setups
-	};
-{triplet} storageTransitionCosts[t in StorageTanks] =
-	{<productId1, productId2, setupCost>|
-		<t.setupMatrixId, productId1, productId2, _, setupCost> in Setups
-	};
+int resourceTransitionCosts[r in Resources][prevProd in productIds union {-1}][nextProd in productIds] =
+	sum(<r.setup_matrixId, prevProd, nextProd, _, setupCost> in Setups)
+	  setupCost;
+int storageTransitionCosts[t in StorageTanks][prevProd in productIds union {-1}][nextProd in productIds] =
+	sum(<t.setupMatrixId, prevProd, nextProd, _, setupCost> in Setups)
+	  setupCost;
 
 // All production steps by resource used
 {ProductionStep} productionStepsOnResource[r in Resources] =
@@ -229,7 +227,6 @@ dvar sequence productionStepIntervalsOnResource[r in Resources]
 
 dvar interval resourceSetupInterval[s in productionSteps]
 	optional
-//	size TODO?
 	;
 
 dvar sequence resourceSetupIntervalsRequiringSetupResource[r in SetupResources]
@@ -281,7 +278,22 @@ dexpr float WeightedProcessingCost =
     TotalProcessingCost * item(CriterionWeights, ord(CriterionWeights, <"ProcessingCost">)).weight;
 
 // setup cost
-dexpr float TotalSetupCost = 0;
+dexpr float TotalSetupCost = //0; /*
+	(sum(s in productionSteps)
+	  presenceOf(resourceSetupInterval[s])*
+	  resourceTransitionCosts
+			[<s.alt.resourceId>]
+			[previousProductId[s]]
+			[s.demand.productId]
+	) //*/
+	+
+	(0 //sum(s in storageSteps)
+		//presenceOf(storageSetupInterval[s])*
+		//storageTransitionCosts
+		//	[s.tank]
+		//	[product of previous storage in s.tank (unsure..)]
+		//	[product of storage step (possible)]
+	);
 dexpr float WeightedSetupCost = 
     TotalSetupCost * item(CriterionWeights, ord(CriterionWeights, <"SetupCost">)).weight;
 
@@ -298,8 +310,9 @@ dexpr float TotalTardinessCost =
 dexpr float WeightedTardinessCost =
   TotalTardinessCost * item(CriterionWeights, ord(CriterionWeights, <"TardinessCost">)).weight;
 
+dexpr float totalWeightedCost = WeightedNonDeliveryCost + WeightedProcessingCost + WeightedSetupCost + WeightedTardinessCost;
 // minimise combined cost
-minimize WeightedNonDeliveryCost + WeightedProcessingCost + WeightedSetupCost + WeightedTardinessCost;
+minimize totalWeightedCost;
 
 subject to {
 	
@@ -436,6 +449,19 @@ subject to {
 					[p.demand.productId];
 	}
 }
+
+// -----------------------------
+// BOUNDS ON WEIGHTED TOTAL COST
+
+// 1. Deliver nothing: sum all non delivery costs
+float doNothingCost = sum(d in Demands) d.nonDeliveryVariableCost*d.quantity;
+subject to {
+	totalWeightedCost <= doNothingCost;
+}
+
+// 2. If we assume we have the cheapest and fastest alternatives available for
+// all demands at the same time, and don't charce setup cost
+//float overlyOptimisticCost = sum
 
 // ----- This should help with generation according description -----
 /*{DemandAssignment} demandAssignments =
