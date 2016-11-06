@@ -120,8 +120,6 @@ tuple ProductionStepPrototype {
 
 // A concrete step in the production process of a demand
 tuple ProductionStep {
-	//key Demand demand;
-	//key StepPrototype stepPrototype;
 	key ProductionStepPrototype prot;
 	key Alternative alt;
 }
@@ -374,9 +372,6 @@ float minimalTardiness[d in Demands] = tardinessCostFunction[d](minimalProductio
 float overlyOptimisticCost =
 	sum(d in Demands) min(cost in costAlternatives[d]) cost;
 
-// 3. something with throughput/bottleneck: hoeveel producteenheden
-// kunnen we uberhaubt produceren, met alles op volle toeren?
-// TODO
 
 subject to {
 	// -------------------------------
