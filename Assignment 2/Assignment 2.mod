@@ -158,6 +158,10 @@ int productionTime[p in productionSteps] = ftoi(ceil(
 		p.prot.demand.quantity*p.alt.variableProcessingTime
 		+ p.alt.fixedProcessingTime
 	));
+float productionCost[p in productionSteps] =
+	p.alt.variableProcessingCost * p.prot.demand.quantity
+	+ p.alt.fixedProcessingCost;
+	
 
 // setup times
 {triplet} resourceTransitionTimes[r in Resources] =
@@ -277,12 +281,7 @@ dexpr float WeightedNonDeliveryCost = nonDeliveryWeight * TotalNonDeliveryCost;
 // processing cost
 dexpr float processingCostOfStep[pstep in productionSteps] =
 	  presenceOf(productionStepInterval[pstep])
-	  *
-	  (
-	  	pstep.alt.variableProcessingCost * pstep.prot.demand.quantity
-	  	+
-	  	pstep.alt.fixedProcessingCost
-	  );
+	  * productionCost[pstep];
 dexpr float TotalProcessingCost =
 	sum(pstep in productionSteps) processingCostOfStep[pstep];
 dexpr float WeightedProcessingCost = processingWeight * TotalProcessingCost;
@@ -335,19 +334,19 @@ float doNothingCost =
 // affecting eachother). For easy calculation, assume the fastest
 // alternatives for tardiness and the cheapest alternatives for
 // production cost.
-float prodCost[p in productionSteps] = p.alt.variableProcessingCost * p.prot.demand.quantity + p.alt.fixedProcessingCost;
-{StepPrototype} stepsPerDemand[d in Demands] = {s | s in Steps : <d, s> in productionStepPrototypes};
+{ProductionStepPrototype} stepsPerDemand[d in Demands] =
+	{<d, s> | <d, s> in productionStepPrototypes};
 
 float minimalProductionCost[d in Demands] =
 	sum(s in stepsPerDemand[d])
-		min(p in productionSteps : p.prot.demand == d && p.alt.stepId == s.stepId) prodCost[p];
+		min(p in productionSteps : p.prot == s)
+			productionCost[p];
 
 // Same for the productiontime
-float prodTime[p in productionSteps] = p.alt.variableProcessingTime * p.prot.demand.quantity + p.alt.fixedProcessingTime;
-
 float minimalProductionTime[d in Demands] =
 	sum(s in stepsPerDemand[d])
-		min(p in productionSteps : p.prot.demand == d && p.alt.stepId == s.stepId) prodTime[p];
+		min(p in productionSteps : p.prot == s)
+			productionTime[p];
 
 float minimalTardiness[d in Demands] = 0; // TODO
 {float} costAlternatives[d in Demands] = {
