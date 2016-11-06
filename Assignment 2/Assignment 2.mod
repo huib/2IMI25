@@ -335,8 +335,14 @@ float doNothingCost =
 // affecting eachother). For easy calculation, assume the fastest
 // alternatives for tardiness and the cheapest alternatives for
 // production cost.
-{ProductionStep} cheapestProductionSteps[d in Demands] = {}; // TODO
-float minimalProductionCost[d in Demands] = 0; // TODO
+
+float prodCost[p in productionSteps] = p.alt.variableProcessingCost * p.prot.demand.quantity + p.alt.fixedProcessingCost;
+{StepPrototype} stepsPerDemand[d in Demands] = {s | s in Steps : <d, s> in productionStepPrototypes};
+
+float minimalProductionCost[d in Demands] =
+	sum(s in stepsPerDemand[d])
+		min(p in productionSteps : p.prot.demand == d && p.alt.stepId == s.stepId) prodCost[p];
+
 {ProductionStep} quickestProductionSteps[d in Demands] = {}; // TODO
 int minimalProductionTime[d in Demands] = 0; // TODO
 float minimalTardiness[d in Demands] = 0; // TODO
