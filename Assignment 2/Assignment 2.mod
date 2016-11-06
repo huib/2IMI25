@@ -94,9 +94,9 @@ tuple CriterionWeight {
 
 // Magic settings
 execute {
-	cp.param.defaultinferencelevel = "Basic";
-	cp.param.searchType = "restart";
-	cp.param.restartfaillimit = 100;
+	//cp.param.defaultinferencelevel = "default";
+	//cp.param.searchType = "restart";
+	//cp.param.restartfaillimit = 100;
     cp.param.Workers = 1;
     cp.param.TimeLimit = Opl.card(Demands); 
 }
