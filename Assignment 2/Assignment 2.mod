@@ -117,8 +117,9 @@ tuple ProductionStepPrototype {
 
 // A concrete step in the production process of a demand
 tuple ProductionStep {
-	key Demand demand;
-	key StepPrototype stepPrototype;
+	//key Demand demand;
+	//key StepPrototype stepPrototype;
+	key ProductionStepPrototype prot;
 	key Alternative alt;
 }
 
@@ -147,13 +148,14 @@ tuple StorageStep {
 
 // All possible ProductionSteps
 {ProductionStep} productionSteps =
-	{<demand, stepProt, alt>|
-		demand in Demands,
-		stepProt in Steps : stepProt.productId == demand.productId,
+	{<<demand, stepProt>, alt>|
+		<demand, stepProt> in productionStepPrototypes,
+		//demand in Demands,
+		//stepProt in Steps : stepProt.productId == demand.productId,
 		alt in Alternatives : alt.stepId == stepProt.stepId
 	};
 int productionTime[p in productionSteps] = ftoi(ceil(
-		p.demand.quantity*p.alt.variableProcessingTime
+		p.prot.demand.quantity*p.alt.variableProcessingTime
 		+ p.alt.fixedProcessingTime
 	));
 
@@ -186,13 +188,13 @@ int storageTransitionCosts[t in StorageTanks][prevProd in productIds union {-1}]
 	{pstep| pstep in productionSteps : pstep.alt.resourceId == r.resourceId};
 // All production steps by the setup resource they might require
 {ProductionStep} productionStepsRequiringSetupResource[r in SetupResources] =
-	{pstep| pstep in productionSteps : pstep.stepPrototype.setupResourceId == r.setupResourceId};
+	{pstep| pstep in productionSteps : pstep.prot.stepPrototype.setupResourceId == r.setupResourceId};
 
 // Between all consecutive production steps of a demand, we have
 // a storage step prototype
 {StorageStepPrototype} storageStepPrototypes =
 	{<p, step1.demand>|
-		step1, step2 in productionSteps :
+		step1, step2 in productionStepPrototypes :
 			step1.demand == step2.demand,
 		p in Precedences :
 			p.predecessorId == step1.stepPrototype.stepId &&
@@ -227,7 +229,7 @@ dvar interval storageUseInterval[s in storageSteps]
 
 dvar sequence productionStepIntervalsOnResource[r in Resources]
 	in all(p in productionStepsOnResource[r]) productionStepInterval[p]
-	types all(p in productionStepsOnResource[r]) p.demand.productId
+	types all(p in productionStepsOnResource[r]) p.prot.demand.productId
 	;
 
 dvar interval resourceSetupInterval[s in productionSteps]
@@ -248,7 +250,7 @@ dexpr int previousProductId[p in productionSteps] =
 dexpr int productionStepNeedsSetup[p in productionSteps] =
 	presenceOf(productionStepInterval[p]) &&
 	previousProductId[p] != -1 &&
-	p.demand.productId != previousProductId[p];
+	p.prot.demand.productId != previousProductId[p];
 	
 // Storage tank stuff
 
@@ -277,7 +279,7 @@ dexpr float processingCostOfStep[pstep in productionSteps] =
 	  presenceOf(productionStepInterval[pstep])
 	  *
 	  (
-	  	pstep.alt.variableProcessingCost * pstep.demand.quantity
+	  	pstep.alt.variableProcessingCost * pstep.prot.demand.quantity
 	  	+
 	  	pstep.alt.fixedProcessingCost
 	  );
@@ -291,7 +293,7 @@ dexpr float setupCostOfStep[s in productionSteps] =
 	  resourceTransitionCosts
 			[<s.alt.resourceId>]
 			[previousProductId[s]]
-			[s.demand.productId];
+			[s.prot.demand.productId];
 dexpr float TotalSetupCost = //0; /*
 	(sum(s in productionSteps) setupCostOfStep[s]) //*/
 	+
@@ -372,9 +374,9 @@ subject to {
 	// productionSteps must adhere to precedence
 	forall(precedence in Precedences)
 	  forall(step1, step2 in productionSteps :
-	  		step1.stepPrototype.stepId == precedence.predecessorId &&
-	  		step2.stepPrototype.stepId == precedence.successorId &&
-	  		step1.demand == step2.demand
+	  		step1.prot.stepPrototype.stepId == precedence.predecessorId &&
+	  		step2.prot.stepPrototype.stepId == precedence.successorId &&
+	  		step1.prot.demand == step2.prot.demand
 	  	) {
 	  	// end of previous step and start of next must be exactly
 	  	// as far appart als the size of the storage use (0 if no
@@ -394,7 +396,7 @@ subject to {
 	  	// is present
 	  	forall(s in storageSteps :
 	  			s.prototype.prec == precedence &&
-	  			s.prototype.demand == step1.demand
+	  			s.prototype.demand == step1.prot.demand
 	  		) {
 		  	// if present, end of previous step and start of storage
 		  	// must coincide
@@ -438,7 +440,7 @@ subject to {
 	forall(d in Demands)
 	  span(
 	  	productionInterval[d],
-	  	all(s in productionSteps : d == s.demand)
+	  	all(s in productionSteps : d == s.prot.demand)
 	  		productionStepInterval[s]
 	  );
 	
@@ -448,22 +450,27 @@ subject to {
 	forall(prot in productionStepPrototypes)
 	  presenceOf(productionInterval[prot.demand])
 	  ==
-	  sum(s in productionSteps :
-	  		s.demand == prot.demand &&
-	  		s.stepPrototype == prot.stepPrototype
-	  	)
+	  sum(s in productionSteps : s.prot == prot)
 	  	presenceOf(productionStepInterval[s]);
 
 	// storage is not used when demand is not delivered
 	forall(s in storageSteps)
-	  presenceOf(storageUseInterval[s]) => presenceOf(productionInterval[s.prototype.demand]);
-	// exactly one storage must be used when demand is delivered and min delay is
-	// larger than zero
+	  presenceOf(storageUseInterval[s])
+	  => presenceOf(productionInterval[s.prototype.demand]);
+	
 	forall(s in storageStepPrototypes)
+	{
+	  // exactly one storage must be used when demand is delivered and min delay is
+	  // larger than zero
 	  (presenceOf(productionInterval[s.demand]) && s.prec.delayMin > 0)
 	  =>
 	  1 == sum(storStep in storageSteps : storStep.prototype == s)
 	    presenceOf(storageUseInterval[storStep]);
+	  
+	  // no more than one storage can be used for each storage prototype
+	  1 >= sum(storStep in storageSteps : storStep.prototype == s)
+	    presenceOf(storageUseInterval[storStep]);
+	}	
 	
 	
 	// a setup interval must be present (and of the right size and time)
@@ -484,7 +491,7 @@ subject to {
 				== resourceTransitionTime
 					[<p.alt.resourceId>]
 					[previousProductId[p]]
-					[p.demand.productId];
+					[p.prot.demand.productId];
 	}
 	
 	// -----------------
@@ -526,8 +533,8 @@ tuple StepAssignment {
 };
 
 {StepAssignment} stepAssignments =
-{<s.demand.demandId,
-	s.stepPrototype.stepId,
+{<s.prot.demand.demandId,
+	s.prot.stepPrototype.stepId,
 	startOf(productionStepInterval[s]),
 	endOf(productionStepInterval[s]),
 	s.alt.resourceId,
@@ -535,7 +542,7 @@ tuple StepAssignment {
 	setupCostOfStep[s],
 	startOf(resourceSetupInterval[s]),
 	endOf(resourceSetupInterval[s]),
-	s.stepPrototype.setupResourceId
+	s.prot.stepPrototype.setupResourceId
 > | s in productionSteps : presenceOf(productionStepInterval[s])};
 
 tuple StorageAssignment {
@@ -547,15 +554,12 @@ tuple StorageAssignment {
   string storageTankId;
 };
 
-{StorageAssignment} storageAssignments = {}; /* ERROR:
-//Beschrijving	Resource	Pad	Locatie	Type
-//Duplicate key "<"Demand0_1", "ActFerment0">" in "storageAssignments".	Assignment 2.mod	/Assignment 2	551:1-557:59 X:\2IMI25\Assignment 2\Assignment 2.mod	OPL Problem Marker
-
+{StorageAssignment} storageAssignments = 
 {<s.prototype.demand.demandId,
-	s.storage.prodStepId, //TODO, maybe we need a different productionStepId..
+	s.storage.prodStepId,
 	startOf(storageUseInterval[s]),
 	endOf(storageUseInterval[s]),
-	s.prototype.demand.quantity, //TODO, maybe we need total amount in the tank instead
+	s.prototype.demand.quantity,
 	s.tank.storageTankId
 > | s in storageSteps : presenceOf(storageUseInterval[s])};
 //*/
