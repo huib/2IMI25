@@ -281,7 +281,10 @@ dexpr float WeightedNonDeliveryCost = nonDeliveryWeight * TotalNonDeliveryCost;
 // processing cost
 dexpr float processingCostOfStep[pstep in productionSteps] =
 	  presenceOf(productionStepInterval[pstep])
-	  * productionCost[pstep];
+	  * (
+	  	pstep.alt.variableProcessingCost * pstep.prot.demand.quantity
+		+ pstep.alt.fixedProcessingCost
+	  );
 dexpr float TotalProcessingCost =
 	sum(pstep in productionSteps) processingCostOfStep[pstep];
 dexpr float WeightedProcessingCost = processingWeight * TotalProcessingCost;
@@ -334,18 +337,18 @@ float doNothingCost =
 // affecting eachother). For easy calculation, assume the fastest
 // alternatives for tardiness and the cheapest alternatives for
 // production cost.
-{ProductionStepPrototype} stepsPerDemand[d in Demands] =
-	{<d, s> | <d, s> in productionStepPrototypes};
+{StepPrototype} stepsPerDemand[d in Demands] =
+	{s | s in Steps : <d, s> in productionStepPrototypes};
 
 float minimalProductionCost[d in Demands] =
 	sum(s in stepsPerDemand[d])
-		min(p in productionSteps : p.prot == s)
+		min(p in productionSteps : p.prot.demand == d && p.alt.stepId == s.stepId)
 			productionCost[p];
 
 // Same for the productiontime
 float minimalProductionTime[d in Demands] =
 	sum(s in stepsPerDemand[d])
-		min(p in productionSteps : p.prot == s)
+		min(p in productionSteps : p.prot.demand == d && p.alt.stepId == s.stepId)
 			productionTime[p];
 
 float minimalTardiness[d in Demands] = 0; // TODO
