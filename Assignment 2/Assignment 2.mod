@@ -94,6 +94,7 @@ tuple CriterionWeight {
 
 // Magic settings
 execute {
+
     cp.param.Workers = 1;
     cp.param.TimeLimit = Opl.card(Demands); 
 }
@@ -351,7 +352,7 @@ float minimalProductionTime[d in Demands] =
 		min(p in productionSteps : p.prot.demand == d && p.alt.stepId == s.stepId)
 			productionTime[p];
 
-float minimalTardiness[d in Demands] = 0; // TODO
+float minimalTardiness[d in Demands] = tardinessCostFunction[d](minimalProductionTime[d]);
 {float} costAlternatives[d in Demands] = {
 		nonDeliveryWeight*d.nonDeliveryVariableCost*d.quantity,
 		processingWeight*minimalProductionCost[d]
