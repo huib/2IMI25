@@ -234,14 +234,11 @@ dvar interval productionInterval[d in Demands]
 dvar interval storageUseInterval[s in storageSteps]
 	optional // see dvar maintanance constraints
 	size s.prototype.prec.delayMin .. s.prototype.prec.delayMax
-	;
-
-dvar interval storageTransitionInterval[ss in storageSteps]
-	optional
 	; 
 
 dvar sequence storageUsesOfTank[t in StorageTanks]
 	in all(ss in storageStepsOfTank[t]) storageUseInterval[ss]
+	types all(ss in storageStepsOfTank[t]) ss.prototype.demand.productId
 	;
 
 dvar sequence productionStepIntervalsOnResource[r in Resources]
@@ -306,13 +303,13 @@ dexpr float WeightedProcessingCost = processingWeight * TotalProcessingCost;
 
 // setup cost
 dexpr float setupCostOfStep[s in productionSteps] =
-	  presenceOf(resourceSetupInterval[s])*
+	  presenceOf(productionStepInterval[s])*
 	  resourceTransitionCosts
 			[<s.alt.resourceId>]
 			[previousProductId[s]]
 			[s.prot.demand.productId];
 dexpr float setupCostOfStorage[s in storageSteps] =
-	  presenceOf(storageTransitionInterval[s])*
+	  presenceOf(storageUseInterval[s])*
 	  storageTransitionCosts
 			[s.tank]
 			[typeOfPrevStorage[s]]
@@ -509,7 +506,11 @@ subject to {
 		
 		// the setup must happen iff the resource needs a setup
 		presenceOf(resourceSetupInterval[p])
-			== presenceOf(productionStepInterval[p]);
+			== (
+				presenceOf(productionStepInterval[p]) &&
+				previousProductId[p] != -1 &&
+				p.prot.demand.productId != previousProductId[p]
+			);
 		
 		// if the setup happens, it must take exactly the amount of time
 		// as described in the setup matrix
@@ -519,27 +520,6 @@ subject to {
 					[<p.alt.resourceId>]
 					[previousProductId[p]]
 					[p.prot.demand.productId];
-	}
-	
-	// the right storage setup intervals should be present. .. hold on I have an idea
-	forall(ss in storageSteps) {
-		endAtStart(
-			storageTransitionInterval[ss],
-			storageUseInterval[ss]
-		);
-		
-		alwaysNoState(tankState[ss.tank],storageTransitionInterval[ss]);
-		
-		presenceOf(storageTransitionInterval[ss]) ==
-			presenceOf(storageUseInterval[ss]);
-		
-		presenceOf(storageTransitionInterval[ss]) => (
-			sizeOf(storageTransitionInterval[ss]) ==
-				storageTransitionTime
-					[ss.tank]
-					[typeOfPrevStorage[ss]]
-					[ss.prototype.demand.productId]
-		);
 	}
 	
 	// -----------------
