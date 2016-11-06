@@ -151,8 +151,6 @@ tuple StorageStep {
 {ProductionStep} productionSteps =
 	{<<demand, stepProt>, alt>|
 		<demand, stepProt> in productionStepPrototypes,
-		//demand in Demands,
-		//stepProt in Steps : stepProt.productId == demand.productId,
 		alt in Alternatives : alt.stepId == stepProt.stepId
 	};
 int productionTime[p in productionSteps] = ftoi(ceil(
