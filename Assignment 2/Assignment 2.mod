@@ -176,8 +176,8 @@ float productionCost[p in productionSteps] =
 int resourceTransitionTime[r in Resources][prevProd in productIds union {-1}][nextProd in productIds] =
 	sum(<r.setup_matrixId, prevProd, nextProd, setupTime, _> in Setups : prevProd >= 0)
 	  setupTime;
-int storageTransitionTime[t in StorageTanks][prevProd in Products][nextProd in Products] =
-	sum(<t.setupMatrixId, prevProd.productId, nextProd.productId, setupTime, _> in Setups)
+int storageTransitionTime[t in StorageTanks][prevProd in productIds union {-1}][nextProd in productIds] =
+	sum(<t.setupMatrixId, prevProd, nextProd, setupTime, _> in Setups)
 	  setupTime;
 
 // setup costs
@@ -216,6 +216,10 @@ int storageTransitionCosts[t in StorageTanks][prevProd in productIds union {-1}]
 		t in StorageTanks : s.storageTankId == t.storageTankId
 	};
 
+// All storage steps index by storageTank
+{StorageStep} storageStepsOfTank[t in StorageTanks] =
+	{ss | ss in storageSteps : ss.tank == t}; 
+
 // ----------------
 // DVARs AND DEXPRs
 
@@ -230,6 +234,14 @@ dvar interval productionInterval[d in Demands]
 dvar interval storageUseInterval[s in storageSteps]
 	optional // see dvar maintanance constraints
 	size s.prototype.prec.delayMin .. s.prototype.prec.delayMax
+	;
+
+dvar interval storageTransitionInterval[ss in storageSteps]
+	optional
+	; 
+
+dvar sequence storageUsesOfTank[t in StorageTanks]
+	in all(ss in storageStepsOfTank[t]) storageUseInterval[ss]
 	;
 
 dvar sequence productionStepIntervalsOnResource[r in Resources]
@@ -252,11 +264,13 @@ dexpr int previousProductId[p in productionSteps] =
 		item(Resources, <p.alt.resourceId>).initial_productId
 	);
 
-dexpr int productionStepNeedsSetup[p in productionSteps] =
-	presenceOf(productionStepInterval[p]) &&
-	previousProductId[p] != -1 &&
-	p.prot.demand.productId != previousProductId[p];
-	
+dexpr int typeOfPrevStorage[ss in storageSteps] =
+	typeOfPrev(
+		storageUsesOfTank[ss.tank],
+		storageUseInterval[ss],
+		ss.tank.initialProductId
+	);
+
 // Storage tank stuff
 
 // Build a cumulfunction to store the amount stored in tanks;
@@ -297,16 +311,16 @@ dexpr float setupCostOfStep[s in productionSteps] =
 			[<s.alt.resourceId>]
 			[previousProductId[s]]
 			[s.prot.demand.productId];
-dexpr float TotalSetupCost = //0; /*
-	(sum(s in productionSteps) setupCostOfStep[s]) //*/
+dexpr float setupCostOfStorage[s in storageSteps] =
+	  presenceOf(storageTransitionInterval[s])*
+	  storageTransitionCosts
+			[s.tank]
+			[typeOfPrevStorage[s]]
+			[s.prototype.demand.productId];
+dexpr float TotalSetupCost = 
+	(sum(s in productionSteps) setupCostOfStep[s])
 	+
-	(0 //sum(s in storageSteps)
-		//presenceOf(storageSetupInterval[s])*
-		//storageTransitionCosts
-		//	[s.tank]
-		//	[product of previous storage in s.tank (unsure..)]
-		//	[product of storage step (possible)]
-	);
+	(sum(s in storageSteps) setupCostOfStorage[s]);
 dexpr float WeightedSetupCost = setupWeight * TotalSetupCost;
 
 // tardiness cost
@@ -495,7 +509,7 @@ subject to {
 		
 		// the setup must happen iff the resource needs a setup
 		presenceOf(resourceSetupInterval[p])
-			== productionStepNeedsSetup[p];
+			== presenceOf(productionStepInterval[p]);
 		
 		// if the setup happens, it must take exactly the amount of time
 		// as described in the setup matrix
@@ -505,6 +519,27 @@ subject to {
 					[<p.alt.resourceId>]
 					[previousProductId[p]]
 					[p.prot.demand.productId];
+	}
+	
+	// the right storage setup intervals should be present. .. hold on I have an idea
+	forall(ss in storageSteps) {
+		endAtStart(
+			storageTransitionInterval[ss],
+			storageUseInterval[ss]
+		);
+		
+		alwaysNoState(tankState[ss.tank],storageTransitionInterval[ss]);
+		
+		presenceOf(storageTransitionInterval[ss]) ==
+			presenceOf(storageUseInterval[ss]);
+		
+		presenceOf(storageTransitionInterval[ss]) => (
+			sizeOf(storageTransitionInterval[ss]) ==
+				storageTransitionTime
+					[ss.tank]
+					[typeOfPrevStorage[ss]]
+					[ss.prototype.demand.productId]
+		);
 	}
 	
 	// -----------------
